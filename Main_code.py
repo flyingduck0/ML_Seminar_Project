@@ -116,18 +116,22 @@ BLACKLIST = [
 
 # PILLAR 1: Strict keywords for local text/slug pulling
 SLUG_KEYWORDS = {
-    "FED_POLICY": ["fed-funds-rate", "target-rate"],
+    # Added "fed-decision", "fed-rate", "fomc", and "bps" (basis points) to catch meeting-specific markets
+    "FED_POLICY": ["fed-funds-rate", "target-rate", "fed-decision", "fed-rate", "fomc", "interest-rate", "bps"],
     "LABOR_MARKET": ["unemployment-rate", "nonfarm-payrolls"],
-    "INFLATION": ["cpi-yoy", "cpi-mom", "core-cpi", "us-inflation"], 
+    # Replaced "us-inflation" with "inflation" and added "pce" (the Fed's actual preferred inflation metric)
+    "INFLATION": ["cpi-yoy", "cpi-mom", "core-cpi", "inflation", "pce"], 
     "GDP_GROWTH": ["gdp-growth"] 
 }
 
 # PILLAR 2: Exact matching for API tags (NO substrings allowed)
 TAG_KEYWORDS = {
-    "FED_POLICY": ["fomc", "federal reserve", "interest rate", "rate cut", "fed rates"],
+    # Added broad API tags like "fed", "monetary policy", and plural "interest rates"
+    "FED_POLICY": ["fomc", "federal reserve", "interest rate", "interest rates", "rate cut", "fed rates", "fed", "monetary policy"],
     "LABOR_MARKET": ["unemployment", "nonfarm payroll", "nfp", "jobless claims", "jobs report"],
-    "INFLATION": ["cpi", "core cpi", "us inflation"],
-    "GDP_GROWTH": ["gdp", "us gdp"]
+    # Added the raw "inflation" tag and "pce"
+    "INFLATION": ["cpi", "core cpi", "us inflation", "inflation", "pce", "personal consumption expenditures"],
+    "GDP_GROWTH": ["gdp", "us gdp", "economic growth"]
 }
 
 def extract_events():
@@ -212,7 +216,10 @@ def extract_events():
             offset = 0
             while True:
                 try:
-                    params = {"limit": limit, "offset": offset, "tag_id": t_id, "closed": "true", "active": "false"}
+                    # FIX APPLIED: Cleaned up the params dictionary. 
+                    # Removed the restrictive "closed": "true", "active": "false" rule completely.
+                    params = {"limit": limit, "offset": offset, "tag_id": t_id}
+                    
                     response = req.get(events_url, params=params, timeout=15)
                     response.raise_for_status()
                     events_data = response.json()
@@ -622,38 +629,163 @@ def split_markets_by_pillar():
 
 if __name__ == "__main__":
     split_markets_by_pillar()
+    
 # %%
-
-# %%
+# GDP Growth final data
 import pandas as pd
-
 # 1. Load the dataset
 df = pd.read_csv("GDP_GROWTH_MARKETS.csv")
 
-# 2. Your exact slug logic
+# 2. Corrected Slug Logic (Removed 'us-' from Yearly)
 def is_production_gdp(slug):
     if not isinstance(slug, str): 
         return None
     
     slug = slug.lower().strip()
     
-    # Check for Quarterly
+    # Quarterly Template
     if slug.startswith("us-gdp-growth-in-q"):
         return "GDP_QUARTERLY"
         
-    # Check for Yearly
-    if slug.startswith("us-gdp-growth-in-20"):
+    # Yearly Template (Corrected: removed 'us-')
+    if slug.startswith("gdp-growth-in-20"):
         return "GDP_YEARLY"
         
     return None
 
-# 3. Apply filter and keep the WHOLE table
+# 3. Apply filter
 df['category'] = df['slug'].apply(is_production_gdp)
 final_table = df[df['category'].notnull()].copy()
 
-# 4. Save to the final file name
+# 4. Save
 final_table.to_csv("FINAL_US_GDP_MARKETS.csv", index=False)
 
-print(f"Done. Saved {len(final_table)} rows to FINAL_US_GDP_MARKETS.csv")
+print(f"Success! Found {len(final_table)} total markets.")
+print(f"Quarterly: {len(final_table[final_table['category'] == 'GDP_QUARTERLY'])}")
+print(f"Yearly: {len(final_table[final_table['category'] == 'GDP_YEARLY'])}")
 # %%
 
+# %%
+# Unemployment Rate final data (REFINED)
+import pandas as pd
+
+# 1. Load the dataset
+df = pd.read_csv("LABOR_MARKET_MARKETS.csv")
+
+# 2. Unemployment-Specific Slug Logic
+def is_unemployment_market(slug):
+    if not isinstance(slug, str): 
+        return None
+    
+    slug = slug.lower().strip()
+    
+    # EXCLUSION: Block India or other non-US markets
+    if "india" in slug or "indian" in slug:
+        return None
+    
+    # List of months to look for
+    months = [
+        'january', 'february', 'march', 'april', 'may', 'june', 
+        'july', 'august', 'september', 'october', 'november', 'december'
+    ]
+    
+    # REQUIREMENT: Must have "unemployment-rate" AND a Month
+    if "unemployment-rate" in slug:
+        for month in months:
+            if month in slug:
+                return "UNEMPLOYMENT_MONTHLY"
+        
+    return None
+
+# 3. Apply filter
+df['category'] = df['slug'].apply(is_unemployment_market)
+final_unemployment_table = df[df['category'].notnull()].copy()
+
+# 4. Save the cleaned file
+final_unemployment_table.to_csv("FINAL_UNEMPLOYMENT_MARKETS.csv", index=False)
+
+print(f"Success! Found {len(final_unemployment_table)} US unemployment markets.")
+print(f"The 'India' market has been removed.")
+print(f"Note: October 2025 is missing due to the 43-day gov shutdown.")
+# %%
+
+# %%
+# Inflation Final: THE CLEAN TWO-VARIABLE MODEL
+import pandas as pd
+
+# 1. Load the dataset
+df = pd.read_csv("INFLATION_MARKETS.csv")
+
+# 2. Strict Filter for YoY Monthly and Yearly Totals only
+def streamline_inflation(slug):
+    if not isinstance(slug, str): return None
+    slug = slug.lower().strip()
+    
+    # Category A: Yearly Anchor (The "How High" markets)
+    if slug.startswith("how-high-will-inflation-get-in-"):
+        return "INFLATION_YEAR_ANCHOR"
+    
+    # Category B: Monthly YoY Pulse (The "Annualized" monthly prints)
+    # We explicitly ignore "-monthly" (MoM) to keep the data clean
+    if "-inflation-annual" in slug or "-inflation-us-annual" in slug:
+        return "INFLATION_MONTH_YOY"
+        
+    return None
+
+# 3. Apply and Save
+df['category'] = df['slug'].apply(streamline_inflation)
+final_table = df[df['category'].notnull()].copy()
+
+# 4. Final Cleanup: Sort by Date so the sequence is visible
+final_table['endDate'] = pd.to_datetime(final_table['endDate'])
+final_table = final_table.sort_values(by='endDate')
+
+final_table.to_csv("FINAL_INFLATION.csv", index=False)
+
+print(f"Success! Model built with {len(final_table)} clean data points.")
+print(f"-> Yearly Anchors: {len(final_table[final_table['category'] == 'INFLATION_YEAR_ANCHOR'])}")
+print(f"-> Monthly YoY: {len(final_table[final_table['category'] == 'INFLATION_MONTH_YOY'])}")
+# %%
+
+# %%
+# Fed Policy Final: THE MEETING DECISION MODEL
+import pandas as pd
+
+# 1. Load the dataset
+df = pd.read_csv("FED_POLICY_MARKETS.csv")
+
+# 2. Strict Filter for FOMC Meeting Decisions only
+def is_fed_meeting(slug):
+    if not isinstance(slug, str): 
+        return None
+    
+    slug = slug.lower().strip()
+    
+    # List of months to look for
+    months = [
+        'january', 'february', 'march', 'april', 'may', 'june', 
+        'july', 'august', 'september', 'october', 'november', 'december'
+    ]
+    
+    # REQUIREMENT: Must match the standard 2025 naming OR the 2026 naming shift
+    # This catches 'fed-interest-rates-january-2025' and 'fed-decision-in-march-885'
+    if "fed-interest-rates-" in slug or "fed-decision-in-" in slug:
+        for month in months:
+            if month in slug:
+                return "FED_MEETING_DECISION"
+        
+    return None
+
+# 3. Apply and Save
+df['category'] = df['slug'].apply(is_fed_meeting)
+final_fed_table = df[df['category'].notnull()].copy()
+
+# 4. Final Cleanup: Sort by Date so the sequence is visible
+final_fed_table['endDate'] = pd.to_datetime(final_fed_table['endDate'])
+final_fed_table = final_fed_table.sort_values(by='endDate')
+
+final_fed_table.to_csv("FINAL_FED_MEETINGS.csv", index=False)
+
+print(f"Success! Found {len(final_fed_table)} US Fed meeting markets.")
+print(f"Note: This logic bridges the naming shift between the 2025 and 2026 cycles.")
+# %%
