@@ -789,3 +789,52 @@ final_fed_table.to_csv("FINAL_FED_MEETINGS.csv", index=False)
 print(f"Success! Found {len(final_fed_table)} US Fed meeting markets.")
 print(f"Note: This logic bridges the naming shift between the 2025 and 2026 cycles.")
 # %%
+
+# %%
+class PolyClobTool:
+    def __init__(self, csv_path='FINAL_UNEMPLOYMENT_MARKETS.csv'):
+        self.df = pd.read_csv(csv_path)
+        self.base_url = "https://clob.polymarket.com"
+
+    def get_market_row(self, identifier):
+        """Finds market by slug or token ID in the CSV."""
+        match = self.df[self.df['slug'] == identifier]
+        if match.empty:
+            match = self.df[self.df['clobTokenIds'].astype(str).str.contains(identifier, na=False)]
+        return match
+
+    def get_live_book(self, identifier):
+        """Pulls live Bids/Asks from the CLOB API."""
+        row = self.get_market_row(identifier)
+        if row.empty: return "Market not found."
+        
+        token_ids = json.loads(row.iloc[0]['clobTokenIds'])
+        results = {}
+        
+        for i, tid in enumerate(token_ids):
+            side = "YES" if i == 0 else "NO"
+            res = requests.get(f"{self.base_url}/book?token_id={tid}")
+            if res.status_code == 200:
+                data = res.json()
+                results[side] = {
+                    "best_bid": data.get('bids', [{}])[0].get('price', 'N/A'),
+                    "best_ask": data.get('asks', [{}])[0].get('price', 'N/A'),
+                    "total_liquidity": len(data.get('bids', [])) + len(data.get('asks', []))
+                }
+        return results
+
+    def get_history(self, identifier, interval="1d", fidelity=60):
+        """Pulls historic price points from the CLOB API."""
+        row = self.get_market_row(identifier)
+        if row.empty: return "Market not found."
+        
+        token_ids = json.loads(row.iloc[0]['clobTokenIds'])
+        # Usually we track history for the 'YES' token (index 0)
+        target_token = token_ids[0] 
+        
+        params = {"market": target_token, "interval": interval, "fidelity": fidelity}
+        res = requests.get(f"{self.base_url}/prices-history", params=params)
+        
+        return res.json().get('history', []) if res.status_code == 200 else []
+# %%
+     
