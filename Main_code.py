@@ -827,7 +827,7 @@ if all_market_data:
     final_history_df['t'] = pd.to_datetime(final_history_df['t'], unit='s')
 
     # --- NEW LINE: Create a lookup table of ID -> Slug ---
-    lookup = Fed_meeting_data[['token_id', 'slug']]
+    lookup = Fed_meeting_data[['token_id', 'slug','groupItemTitle']]
 
     # --- NEW LINE: Merge the slug into the history ---
     final_history_df = pd.merge(final_history_df, lookup, on='token_id', how='left')
@@ -839,5 +839,26 @@ if all_market_data:
 else:
     print("No data was collected.")
 # %%
-#for fed data find a way to collapse all different basis point
-#use slug
+import pandas as pd
+
+historical_fed_data = pd.read_csv('FED_MEETINGS_HISTORY.csv')
+
+historical_fed_data['bps_extracted'] = historical_fed_data['groupItemTitle'].str.extract(r'(\d+)').astype(float)
+historical_fed_data['bps_extracted'] = historical_fed_data['bps_extracted'].fillna(0)
+
+historical_fed_data['t'] = pd.to_datetime(historical_fed_data['t']).dt.date
+
+historical_fed_data['weighted_val'] = historical_fed_data['p'] * historical_fed_data['bps_extracted']
+
+grouped = historical_fed_data.groupby(['slug', 't']).agg(
+    total_weighted_sum = ('weighted_val', 'sum'),
+    sum_of_probabilities = ('p', 'sum')).reset_index()
+
+grouped['expected_bps_change'] = grouped['total_weighted_sum'] / grouped['sum_of_probabilities']
+
+grouped.to_csv('FED_MEETINGS_Data_cleaned')
+
+
+    
+# %%
+#for fed data find a way to collapse all different basis point (weighted average of basis points)
