@@ -789,3 +789,59 @@ final_fed_table.to_csv("FINAL_FED_MEETINGS.csv", index=False)
 print(f"Success! Found {len(final_fed_table)} US Fed meeting markets.")
 print(f"Note: This logic bridges the naming shift between the 2025 and 2026 cycles.")
 # %%
+import requests
+import pandas as pd
+import time
+pd.set_option('display.max_colwidth', None)
+Fed_meeting_data = pd.read_csv('FINAL_FED_MEETINGS.csv')
+
+yes_token_id = Fed_meeting_data['clobTokenIds'].str.extract(r'["\'\[]([a-zA-Z0-9]+)')
+#print(yes_token_id.head())
+
+# 1. Prepare your ID list (dropping any NaN values)
+ids_to_fetch = yes_token_id[0].dropna().head(5).tolist()
+
+all_market_data = []
+
+print(f"Starting fetch for {len(ids_to_fetch)} markets...")
+
+# 2. Loop and Fetch
+for token_id in ids_to_fetch:
+    try:
+        # Construct the History URL
+        # Interval 'max' gets everything; 'fidelity' 60 gives 1-hour chunks
+        url = f"https://clob.polymarket.com/prices-history?market={token_id}&interval=max&fidelity=1440"
+        
+        response = requests.get(url)
+        
+        if response.status_code == 200:
+            history = response.json().get('history', [])
+            
+            # Convert this specific market's history to a temporary DataFrame
+            temp_df = pd.DataFrame(history)
+            temp_df['token_id'] = token_id  # Keep track of which ID this belongs to
+            
+            all_market_data.append(temp_df)
+            print(f"Success: Pulled {len(history)} data points for {token_id[:10]}...")
+        else:
+            print(f"Failed: {token_id[:10]} (Status: {response.status_code})")
+            
+        # Small sleep to avoid hitting rate limits
+        time.sleep(0.2) 
+        
+    except Exception as e:
+        print(f"Error on {token_id}: {e}")
+
+# 3. Combine everything into one big Master DataFrame
+if all_market_data:
+    final_history_df = pd.concat(all_market_data, ignore_index=True)
+    final_history_df['t'] = pd.to_datetime(final_history_df['t'], unit='s')
+    
+    print("\nFinal Data Preview:")
+    print(final_history_df.head())
+    
+    # Save it to a CSV
+    final_history_df.to_csv('FED_MEETINGS_HISTORY.csv', index=False)
+else:
+    print("No data was collected.")
+# %%
