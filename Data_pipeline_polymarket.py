@@ -22,7 +22,7 @@ from py_clob_client import ClobClient
 from py_clob_client import OrderArgs, MarketOrderArgs, OrderType, OpenOrderParams, BalanceAllowanceParams, AssetType
 
 # Newly added time tools for dynamic slug generation and timezone enforcement
-from datetime import dat
+from datetime import datetime
 import pytz
 
 # ==========================================
@@ -542,50 +542,43 @@ run_final_refinery()
 
 # %%
 # ==========================================
-# PHASE 6: FINAL FEATURE LABELING (REAL-WORLD FIX)
+# PHASE 6: FINAL FEATURE LABELING & CLEANUP (THE TRUE FIX)
 # ==========================================
-MONTHS = ["january", "february", "march", "april", "may", "june", 
-          "july", "august", "september", "october", "november", "december"]
+csv_files = [
+    "FINAL_GDP_MARKETS.csv", 
+    "FINAL_INFLATION_MARKETS.csv", 
+    "FINAL_LABOR_MARKETS.csv", 
+    "FINAL_FED_MARKETS.csv"
+]
 
-def get_exact_feature(slug):
-    slug = str(slug).lower()
-    
-    # --- 1. GDP GROWTH ---
-    # Broadened to catch slugs starting with "will-"
-    if "gdp-growth" in slug and any(q in slug for q in ["q1", "q2", "q3", "q4"]):
-        return "GDP_QUARTERLY"
-    if "gdp-growth" in slug and ("2025" in slug or "2026" in slug):
-        return "GDP_YEARLY"
-        
-    # --- 2. LABOR MARKET (UNEMPLOYMENT) ---
-    if "india" in slug or "indian" in slug:
-        return "OTHER"
-    elif "unemployment-rate" in slug:
-        if any(m in slug for m in MONTHS):
-            return "UNEMPLOYMENT_MONTHLY"
-            
-    # --- 3. INFLATION ---
-    if "how-high" in slug and "inflation" in slug:
-        return "INFLATION_YEAR_ANCHOR"
-    if "inflation-annual" in slug or "inflation-us-annual" in slug or "annual-inflation" in slug:
-        return "INFLATION_MONTH_YOY"
-        
-    # --- 4. FED POLICY ---
-    # Broadened to catch 'fed-decreases', 'fed-increases', and 'no-change'
-    if "fed-" in slug or "fed-decision" in slug or "no-change" in slug:
-        if any(m in slug for m in MONTHS):
-            return "FED_MEETING_DECISION"
-            
-    return "OTHER"
-
-# Apply to your 4 files
-csv_files = ["FINAL_GDP_MARKETS.csv", "FINAL_INFLATION_MARKETS.csv", 
-             "FINAL_LABOR_MARKETS.csv", "FINAL_FED_MARKETS.csv"]
+print("--- RUNNING FINAL CLEANUP & SORTING ---")
 
 for file in csv_files:
     if os.path.exists(file):
         df = pd.read_csv(file)
-        df['feature'] = df['slug'].apply(get_exact_feature)
+        
+        # Guard to warn you if you forgot to run Phase 5 first
+        if len(df) == 0:
+            print(f"⚠️ {file} is empty! Please re-run Phase 5 to restore the data.")
+            continue
+            
+        # 1. THE REVELATION: Phase 2 already perfectly labeled everything!
+        # We completely bypass market-slug guessing and promote the true label.
+        df['feature'] = df['sub_category']
+        
+        # 2. CHRONOLOGICAL SORT: Order by endDate
+        if 'endDate' in df.columns:
+            df['endDate'] = pd.to_datetime(df['endDate'])
+            df = df.sort_values(by='endDate')
+            
+        # 3. Save the finalized table
         df.to_csv(file, index=False)
-        print(f"✅ Updated {file}: {df['feature'].value_counts().to_dict()}")
+        
+        # Print the audit report to the terminal
+        print(f"\n✅ {file} - Total Clean Markets: {len(df)}")
+        for feature, count in df['feature'].value_counts().items():
+            print(f"  -> {feature}: {count}")
+    else:
+        print(f"⚠️ {file} not found. Skipping.")
 # %%
+
