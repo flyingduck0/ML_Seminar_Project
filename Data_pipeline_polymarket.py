@@ -22,7 +22,7 @@ from py_clob_client import ClobClient
 from py_clob_client import OrderArgs, MarketOrderArgs, OrderType, OpenOrderParams, BalanceAllowanceParams, AssetType
 
 # Newly added time tools for dynamic slug generation and timezone enforcement
-from datetime import datetime
+from datetime import dat
 import pytz
 
 # ==========================================
