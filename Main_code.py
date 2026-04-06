@@ -844,7 +844,7 @@ import pandas as pd
 historical_fed_data = pd.read_csv('FED_MEETINGS_HISTORY.csv')
 
 historical_fed_data['bps_extracted'] = historical_fed_data['groupItemTitle'].str.extract(r'(\d+)').astype(float)
-historical_fed_data['bps_extracted'] = historical_fed_data['bps_extracted'].fillna(0)
+historical_fed_data['bps_extracted'] = historical_fed_data['bps_extracted']
 
 historical_fed_data['t'] = pd.to_datetime(historical_fed_data['t']).dt.date
 
