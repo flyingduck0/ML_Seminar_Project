@@ -808,7 +808,7 @@ print(f"Starting fetch for {len(ids_to_fetch)} markets...")
 # 2. Loop and Fetch
 for token_id in ids_to_fetch:
     try:
-        url = f"https://clob.polymarket.com/prices-history?market={token_id}&interval=max&fidelity=1440"
+        url = f"https://clob.polymarket.com/prices-history?market={token_id}&interval=max&fidelity=60"
         response = requests.get(url)
         
         if response.status_code == 200:
