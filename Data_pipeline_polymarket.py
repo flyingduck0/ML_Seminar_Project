@@ -214,8 +214,6 @@ def categorize_market(slug):
     # --- 1. GDP GROWTH ---
     if slug.startswith("us-gdp-growth-in-q"):
         return "GDP_GROWTH", "GDP_QUARTERLY"
-    if slug.startswith("gdp-growth-in-20"):
-        return "GDP_GROWTH", "GDP_YEARLY"
         
     # --- 2. LABOR MARKET (UNEMPLOYMENT) ---
     if "india" in slug or "indian" in slug:
@@ -486,9 +484,10 @@ def run_final_refinery(min_volume=0):
             feature = "OTHER"
 
             # GDP Patterns
-            if slug.startswith("us-gdp-") or slug.startswith("gdp-growth-in-20") or slug.startswith("will-us-gdp-"):
+            # Tightened to only accept Quarterly GDP; Yearly is now filtered out
+            if slug.startswith("us-gdp-growth-in-q") or ("us-gdp" in slug and "in-q" in slug):
                 is_us_macro = True
-                feature = "GDP_QUARTERLY" if "in-q" in slug else "GDP_YEARLY"
+                feature = "GDP_QUARTERLY"
             
             # Labor Patterns (Preserves Jan/Feb 2025 which lack year tags)
             elif "unemployment" in slug:
@@ -581,4 +580,3 @@ for file in csv_files:
     else:
         print(f"⚠️ {file} not found. Skipping.")
 # %%
-
