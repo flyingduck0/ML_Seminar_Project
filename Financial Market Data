@@ -14,7 +14,7 @@ OUTPUT_FILE = "financial_markets_hourly_utc.csv"
 LEVELS_FILE = "financial_markets_hourly_levels_utc.csv"
 METADATA_FILE = "financial_markets_metadata.json"
 
-START_UTC = "2025-03-01 00:00:00"
+START_UTC = "2025-01-01 00:00:00"
 UTC = "UTC"
 
 
@@ -30,7 +30,7 @@ MAIN_PRICE_TICKERS = {
 
 
 YIELD_CANDIDATES = {
-    "US2Y_chg": ["^US2Y", "^USTWO", "^USTTWO", "ZT=F"],
+    "US2Y_chg": ["ZT=F"],
     "US10Y_chg": ["^TNX", "ZN=F"]
 }
 
@@ -329,4 +329,3 @@ summary = pd.DataFrame({
 }).sort_index()
 
 print(summary)
-
