@@ -813,7 +813,7 @@ class PolyClobTool:
         
         for i, tid in enumerate(token_ids):
             side = "YES" if i == 0 else "NO"
-            res = requests.get(f"{self.base_url}/book?token_id={tid}")
+            res = req.get(f"{self.base_url}/book?token_id={tid}")
             if res.status_code == 200:
                 data = res.json()
                 results[side] = {
@@ -833,7 +833,7 @@ class PolyClobTool:
         target_token = token_ids[0] 
         
         params = {"market": target_token, "interval": interval, "fidelity": fidelity}
-        res = requests.get(f"{self.base_url}/prices-history", params=params)
+        res = req.get(f"{self.base_url}/prices-history", params=params)
         
         return res.json().get('history', []) if res.status_code == 200 else []
 # %%
