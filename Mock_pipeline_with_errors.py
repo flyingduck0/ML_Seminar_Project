@@ -599,692 +599,683 @@ print(f"  -> FINAL_INFLATION_MONTHLY_YOY.csv: {len(df_inf[df_inf['sub_category']
 
 # %%
 # ==========================================
-# PHASE 7: THE VACUUM (TOTAL HISTORY PULL) - DIAGNOSTIC EDITION
+# PHASE 7: ADDITIVE INCREMENTAL VACUUM (FIXED: YES-ONLY)
 # ==========================================
 import pandas as pd
 import requests
 import time
 import os
 import ast
+import json
 
-# 1. Configuration & Time Boundaries
-JAN_1_2025_TS = 1735689600  # Unix timestamp for Jan 1, 2025, 00:00:00 UTC
-FIDELITY = 60               # Hourly data
-THIRTY_DAYS = 30 * 24 * 60 * 60  # 30 days in seconds
-
-# Testing with FED pillar first (You can add the others back later)
 macro_pillars = {
-    "FED": "FINAL_FED_MARKETS.csv"
+    "FED": "FINAL_FED_MARKETS.csv",
+    "GDP": "FINAL_GDP_MARKETS.csv",
+    "LABOR": "FINAL_LABOR_MARKETS.csv",
+    "INF_YEARLY": "FINAL_INFLATION_YEARLY.csv",
+    "INF_MONTHLY": "FINAL_INFLATION_MONTHLY_YOY.csv"
 }
 
-# Helper function to safely parse stringified lists
-def parse_array_string(val):
+def parse_tokens(val):
+    """Safely extracts ONLY the first token ID (The 'YES' probability)."""
     try:
-        if pd.isna(val): return []
-        return ast.literal_eval(val)
+        data = ast.literal_eval(val)
+        # CRITICAL FIX: Only return the first ID in the list (Index 0 is ALWAYS 'Yes')
+        return [data[0]] if isinstance(data, list) and len(data) > 0 else []
     except Exception:
-        return []
+        try:
+            data = json.loads(val)
+            return [data[0]] if isinstance(data, list) and len(data) > 0 else []
+        except Exception:
+            return []
 
-print("🚀 STARTING PRODUCTION DATA VACUUM (WITH DIAGNOSTICS)")
-print("📅 Hard Boundary: January 1, 2025")
+def vacuum_token_incremental(tid, slug, start_ts):
+    """Pulls history forward starting from a specific timestamp."""
+    all_history = []
+    current_pointer = start_ts
+    
+    while True:
+        url = f"https://clob.polymarket.com/prices-history?market={tid}&fidelity=60&startTs={current_pointer}"
+        try:
+            r = requests.get(url, timeout=15)
+            if r.status_code != 200: break
+            
+            data = r.json().get('history', [])
+            if not data: break 
+            
+            chunk_df = pd.DataFrame(data)
+            all_history.append(chunk_df)
+            
+            last_ts = int(chunk_df['t'].max())
+            if last_ts <= current_pointer: break
+            
+            current_pointer = last_ts + 1
+            time.sleep(0.1)
+            
+            if last_ts > (time.time() - 7200): break
+        except Exception:
+            break
+            
+    return pd.concat(all_history, ignore_index=True) if all_history else pd.DataFrame()
 
-for category_name, source_csv in macro_pillars.items():
-    if not os.path.exists(source_csv):
-        print(f"⚠️ Missing source file: {source_csv}")
-        continue
+# MAIN LOOP
+for pillar, csv_file in macro_pillars.items():
+    if not os.path.exists(csv_file): continue
+        
+    output_name = f"TOTAL_HISTORY_{pillar}.csv"
+    last_timestamps = {}
     
-    df_ref = pd.read_csv(source_csv)
-    output_filename = f"RAW_HOURLY_HISTORY_{category_name}.csv"
-    
-    existing_data = None
-    known_max_timestamps = {}
-    if os.path.exists(output_filename):
-        existing_data = pd.read_csv(output_filename)
-        known_max_timestamps = existing_data.groupby('token_id')['t'].max().to_dict()
-        print(f"\n📂 CATEGORY: {category_name} (Found existing database. Updating...)")
+    if os.path.exists(output_name):
+        existing_data = pd.read_csv(output_name, usecols=['token_id', 't'])
+        existing_data['t_numeric'] = pd.to_datetime(existing_data['t']).astype(int) // 10**9
+        last_timestamps = existing_data.groupby('token_id')['t_numeric'].max().to_dict()
+        print(f"\n📂 SYNCING PILLAR: {pillar} (Incremental)")
     else:
-        print(f"\n📂 CATEGORY: {category_name} (Creating new database...)")
+        print(f"\n📂 SYNCING PILLAR: {pillar} (New Database)")
 
-    all_new_data = []
+    df_ref = pd.read_csv(csv_file)
+    new_pillar_data = []
 
     for idx, row in df_ref.iterrows():
-        tids = parse_array_string(row['clobTokenIds'])
-        outcomes = parse_array_string(row.get('outcomes', '[]'))
+        tokens = parse_tokens(row['clobTokenIds'])
+        if not tokens: continue
         
-        if not tids:
-            continue
+        # Now 'tokens' only contains ONE ID (The Yes token)
+        tid = tokens[0]
             
-        print(f"\n  ({idx+1}/{len(df_ref)}) Market: {row['slug'][:50]}...")
-        
-        token_mapping = dict(zip(tids, outcomes + ['Unknown'] * (len(tids) - len(outcomes))))
-
-        for tid, outcome_label in token_mapping.items():
-            print(f"    -> Harvesting [{outcome_label}] (ID: {tid[:8]}...)")
-            
-            last_saved_ts = known_max_timestamps.get(tid, JAN_1_2025_TS)
-            current_end_ts = int(time.time()) # Start from exactly right now
-            market_lifetime_data = []
-            
-            # The Diagnostic Leapfrog Loop
-            while current_end_ts > last_saved_ts:
-                current_start_ts = current_end_ts - THIRTY_DAYS
-                
-                # Don't ask for data earlier than our Jan 1st boundary
-                if current_start_ts < last_saved_ts:
-                    current_start_ts = last_saved_ts
-
-                # THE WINDOW FIX: Explicitly passing both startTs and endTs
-                url = f"https://clob.polymarket.com/prices-history?market={tid}&fidelity={FIDELITY}&startTs={current_start_ts}&endTs={current_end_ts}"
-                
-                try:
-                    resp = requests.get(url, timeout=15)
-                    
-                    if resp.status_code == 429:
-                        print("      ⏳ Rate limit hit. Sleeping for 5 seconds...")
-                        time.sleep(5)
-                        continue 
-                        
-                    if resp.status_code != 200:
-                        # --- ENHANCED ERROR LOGGING ---
-                        print(f"      ⚠️ API REJECTION: HTTP {resp.status_code}")
-                        print(f"         URL Used: {url}")
-                        print(f"         Server Message: {resp.text[:250]}") # Shows exact API complaint
-                        print(f"         Action: Leapfrogging backward to bypass error...")
-                        current_end_ts = current_start_ts
-                        time.sleep(2)
-                        continue
-                    
-                    history = resp.json().get('history', [])
-                    
-                    # [FIDELITY FALLBACK] API quirk for closed markets
-                    if not history:
-                        fallback_url = url.replace(f"fidelity={FIDELITY}", "fidelity=720")
-                        fallback_resp = requests.get(fallback_url, timeout=15)
-                        if fallback_resp.status_code == 200:
-                            history = fallback_resp.json().get('history', [])
-                            if history:
-                                print("      ⚠️ Switched to 12-hour fidelity (Closed market API quirk).")
-                    
-                    if history:
-                        # Data found! Process it.
-                        chunk_df = pd.DataFrame(history)
-                        chunk_df['t'] = chunk_df['t'].astype(int)
-                        
-                        valid_chunk = chunk_df[chunk_df['t'] > last_saved_ts]
-                        if not valid_chunk.empty:
-                            market_lifetime_data.append(valid_chunk)
-                            
-                        # Set the next target to 1 second before the oldest data point we just got
-                        earliest_in_batch = chunk_df['t'].min()
-                        new_end = earliest_in_batch - 1
-                        
-                        # Failsafe: if the API returns weird timestamps, force it backward
-                        if new_end >= current_end_ts:
-                            new_end = current_start_ts
-                            
-                        current_end_ts = new_end
-                    else:
-                        # THE LEAPFROG: No data found? Jump back and keep looking.
-                        start_str = pd.to_datetime(current_start_ts, unit='s').strftime('%Y-%m-%d')
-                        end_str = pd.to_datetime(current_end_ts, unit='s').strftime('%Y-%m-%d')
-                        print(f"      🦘 Liquidity gap ({start_str} to {end_str}). Leapfrogging backward...")
-                        current_end_ts = current_start_ts
-                        
-                    time.sleep(0.15) 
-                    
-                except requests.exceptions.RequestException as e:
-                    # --- ENHANCED NETWORK LOGGING ---
-                    print(f"      ❌ Network/Timeout error: {e}")
-                    print(f"         Action: Retrying previous window...")
-                    time.sleep(5)
-                    # We do not change the timestamps here so it retries the same window
-            
-            # Combine the chunks for this token
-            if market_lifetime_data:
-                full_token_df = pd.concat(market_lifetime_data, ignore_index=True)
-                full_token_df['token_id'] = tid
-                full_token_df['outcome_label'] = outcome_label 
-                full_token_df['slug'] = row['slug']
-                all_new_data.append(full_token_df)
-
-    # Save and combine logic
-    if all_new_data:
-        new_df = pd.concat(all_new_data, ignore_index=True)
-        
-        if existing_data is not None:
-            final_df = pd.concat([existing_data, new_df], ignore_index=True)
+        if tid in last_timestamps:
+            start_point = int(last_timestamps[tid]) + 1
         else:
-            final_df = new_df
-            
-        final_df = final_df.drop_duplicates(subset=['token_id', 't']).sort_values(['token_id', 't'])
-        final_df.to_csv(output_filename, index=False)
-        print(f"\n🏁 Category [{category_name}] Complete & Saved. Total rows: {len(final_df)}")
-    else:
-        print(f"\n🏁 Category [{category_name}] had no new data to save.")
-
-print("\n✨ PIPELINE COMPLETE.")
-# %%
-
-# %%
-# ==========================================
-# PHASE 9: FED DATA COLLAPSE (V6 - STATE-DRIVEN FFILL)
-# ==========================================
-import pandas as pd
-import re
-
-# Load raw history (APA Reference: Polymarket, 2026)
-input_file = 'TOTAL_HISTORY_FED.csv'
-df = pd.read_csv(input_file)
-
-# 1. TIME STANDARDIZATION
-df['t'] = pd.to_datetime(df['t'], utc=True)
-df['t_hour'] = df['t'].dt.floor('h')
-
-def extract_bp_value(title):
-    title = str(title).lower()
-    if 'no change' in title: return 0
-    match = re.search(r'(\d+)', title)
-    if match:
-        val = int(match.group(1))
-        if 'decrease' in title: return -val
-        elif 'increase' in title: return val
-    return 0
-
-def extract_meeting_id(slug):
-    match = re.search(r'after-(?:the-)?(.*?)(?=-meeting|$)', slug)
-    return match.group(1) if match else slug
-
-df['bp_value'] = df['groupItemTitle'].apply(extract_bp_value)
-df['meeting'] = df['slug'].apply(extract_meeting_id)
-
-# 2. STAGE 1: DEDUPLICATE (Exact Hour Snapshots)
-print("Stage 1: Removing duplicate snapshots within hours...")
-df_hourly = df.groupby(['meeting', 't_hour', 'slug', 'bp_value'])['p'].mean().reset_index()
-
-# Save a map of slug to bp_value so we can re-attach it after the pivot
-slug_map = df_hourly[['slug', 'bp_value']].drop_duplicates()
-
-# 3. STAGE 2: THE CONTINUOUS GRID (Safe Forward Fill)
-print("Stage 2: Building continuous timelines and applying safe forward-fill...")
-filled_timelines = []
-
-# Process each FOMC meeting entirely independently
-for meeting, group in df_hourly.groupby('meeting'):
-    
-    # Step A: Pivot to isolate slugs into independent columns
-    pivot = group.pivot(index='t_hour', columns='slug', values='p')
-    
-    # Step B: Create a perfect hourly timeline from the Meeting's birth to last trade
-    full_idx = pd.date_range(start=pivot.index.min(), end=pivot.index.max(), freq='h')
-    pivot = pivot.reindex(full_idx)
-    
-    # Step C: The Safe Forward-Fill (Leaves pre-birth NaNs alone)
-    pivot = pivot.ffill()
-    
-    # Step D: Convert pre-birth NaNs to 0 probability
-    pivot = pivot.fillna(0)
-    
-    # Step E: Melt it back into our vertical ML format
-    melted = pivot.reset_index().melt(id_vars='index', var_name='slug', value_name='p')
-    melted.rename(columns={'index': 't_hour'}, inplace=True)
-    melted['meeting'] = meeting
-    
-    filled_timelines.append(melted)
-
-# Reassemble the dataset
-df_filled = pd.concat(filled_timelines, ignore_index=True)
-
-# Re-attach the numerical basis points using our map
-df_filled = df_filled.merge(slug_map, on='slug', how='left')
-
-# 4. CALCULATE EXPECTED CONTRIBUTION
-df_filled['p_times_bp'] = df_filled['p'] * df_filled['bp_value']
-
-# 5. STAGE 3: COLLAPSE
-print("Stage 3: Collapsing into total expected moves...")
-
-# Only count slugs as "active" if they had a probability > 0
-df_active = df_filled[df_filled['p'] > 0]
-
-final_collapsed = df_active.groupby(['meeting', 't_hour']).agg({
-    'p_times_bp': 'sum',      # The True Expected Move BPS
-    'p': 'sum',               # Probability Integrity (Healed by the ffill)
-    'slug': 'nunique'         # Number of Active Markets (prob > 0)
-}).reset_index()
-
-# Final column formatting
-final_collapsed.rename(columns={
-    't_hour': 't', 
-    'p_times_bp': 'expected_move_bps',
-    'p': 'sum_prob',
-    'slug': 'outcome_count'
-}, inplace=True)
-
-# NO FILTERS - Save the raw truth
-output_name = 'FED_MEETINGS_FINAL_SIGNAL.csv'
-final_collapsed.to_csv(output_name, index=False)
-print(f"🏁 DONE: Saved {len(final_collapsed)} unbroken, state-driven hours to {output_name}")
-# %%
-
-# %%
-# ==========================================
-# PHASE 10: GDP DATA COLLAPSE (V6 - STATE-DRIVEN FFILL)
-# ==========================================
-import pandas as pd
-import re
-
-# Load raw history (APA Reference: Polymarket, 2026)
-input_file = 'TOTAL_HISTORY_GDP.csv'
-df = pd.read_csv(input_file)
-
-# 1. TIME STANDARDIZATION
-df['t'] = pd.to_datetime(df['t'], utc=True)
-df['t_hour'] = df['t'].dt.floor('h')
-
-def extract_gdp_value(slug):
-    """Converts outcome slug to numerical GDP percentages."""
-    s = slug.replace('pt', '.')
-    match_between = re.search(r'between-([\d\.]+)-and-([\d\.]+)', s)
-    if match_between: return (float(match_between.group(1)) + float(match_between.group(2))) / 2.0
-    match_less = re.search(r'less-than-([\d\.]+)', s)
-    if match_less: return float(match_less.group(1))
-    match_greater = re.search(r'greater-than-([\d\.]+)', s)
-    if match_greater: return float(match_greater.group(1))
-    return 0.0
-
-def extract_gdp_quarter(slug):
-    """Isolates the GDP quarter from the outcome slug."""
-    match = re.search(r'(q[1-4]-202[5-6])', slug)
-    return match.group(1).upper() if match else slug
-
-df['gdp_value'] = df['slug'].apply(extract_gdp_value)
-df['quarter'] = df['slug'].apply(extract_gdp_quarter)
-
-# 2. STAGE 1: DEDUPLICATE (Bypass Broken Slugs)
-print("Stage 1: Removing duplicate snapshots within hours...")
-# WE CRITICALLY GROUP BY gdp_value, NOT slug, TO FIX THE GDP ISSUE
-df_hourly = df.groupby(['quarter', 't_hour', 'gdp_value'])['p'].mean().reset_index()
-
-# 3. STAGE 2: THE CONTINUOUS GRID (Safe Forward Fill)
-print("Stage 2: Building continuous timelines and applying safe forward-fill...")
-filled_timelines = []
-
-for quarter, group in df_hourly.groupby('quarter'):
-    # Pivot using the clean math (gdp_value) as the columns
-    pivot = group.pivot(index='t_hour', columns='gdp_value', values='p')
-    
-    # Create the perfect hourly ruler for this quarter's lifetime
-    full_idx = pd.date_range(start=pivot.index.min(), end=pivot.index.max(), freq='h')
-    pivot = pivot.reindex(full_idx)
-    
-    # Safely carry actual trades forward (leaves unborn markets as NaN)
-    pivot = pivot.ffill()
-    
-    # Convert unborn markets to 0 probability
-    pivot = pivot.fillna(0)
-    
-    # Melt back into the vertical format
-    melted = pivot.reset_index().melt(id_vars='index', var_name='gdp_value', value_name='p')
-    melted.rename(columns={'index': 't_hour'}, inplace=True)
-    melted['quarter'] = quarter
-    
-    filled_timelines.append(melted)
-
-df_filled = pd.concat(filled_timelines, ignore_index=True)
-
-# 4. CALCULATE EXPECTED CONTRIBUTION
-df_filled['p_times_gdp'] = df_filled['p'] * df_filled['gdp_value']
-
-# 5. STAGE 3: COLLAPSE
-print("Stage 3: Collapsing into total expected moves...")
-
-# Only count brackets that actually have probability weight
-df_active = df_filled[df_filled['p'] > 0]
-
-final_collapsed = df_active.groupby(['quarter', 't_hour']).agg({
-    'p_times_gdp': 'sum',      # The True Expected GDP Growth %
-    'p': 'sum',                # Probability Integrity (includes AMM spikes)
-    'gdp_value': 'nunique'     # Number of Active Brackets
-}).reset_index()
-
-# Final formatting
-final_collapsed.rename(columns={
-    't_hour': 't', 
-    'p_times_gdp': 'expected_gdp_growth', 
-    'p': 'sum_prob', 
-    'gdp_value': 'outcome_count'
-}, inplace=True)
-
-# Save the raw, unmanipulated ML feature
-output_name = 'GDP_EXPECTED_GROWTH_FINAL_SIGNAL.csv'
-final_collapsed.to_csv(output_name, index=False)
-print(f"🏁 DONE: Saved {len(final_collapsed)} unbroken, state-driven hours to {output_name}")
-# %%
-
-# %%
-# ==========================================
-# PHASE 11: LABOR DATA COLLAPSE (V6 PORT)
-# ==========================================
-import pandas as pd
-import re
-
-# Load raw history (APA Reference: Polymarket, 2026)
-input_file = 'TOTAL_HISTORY_LABOR.csv'
-df = pd.read_csv(input_file)
-
-# 1. TIME STANDARDIZATION: Floor everything to the hour
-df['t'] = pd.to_datetime(df['t'], utc=True)
-df['t_hour'] = df['t'].dt.floor('h')
-
-def extract_labor_value(title):
-    """
-    Extracts labor value based on the specific rule:
-    Find the '%' sign and take the 3 characters to its left.
-    """
-    title = str(title)
-    if '%' in title:
-        idx = title.find('%')
-        # Grab the 3 characters before the %
-        val_str = title[max(0, idx-3):idx]
-        # Remove any non-numeric noise (like the ≥ or ≤ symbols)
-        val_str = re.sub(r'[^0-9.]', '', val_str)
-        try:
-            return float(val_str)
-        except:
-            return 0.0
-    return 0.0
-
-def extract_labor_event(slug):
-    """Isolates the report month and year from the slug."""
-    match = re.search(r'(january|february|march|april|may|june|july|august|september|october|november|december)-?(202[4-6])?', slug, re.I)
-    if match:
-        month = match.group(1).lower()
-        year = match.group(2)
-        if not year: year = "2025" # Default for missing year tags in slugs
-        return f"{month}-{year}"
-    return slug
-
-df['labor_val'] = df['groupItemTitle'].apply(extract_labor_value)
-df['event'] = df['slug'].apply(extract_labor_event)
-
-# 2. STAGE 1: DEDUPLICATE outcomes within the same hour
-print("Stage 1: Averaging duplicate snapshots within hours...")
-df_hourly = df.groupby(['event', 't_hour', 'labor_val'])['p'].mean().reset_index()
-
-# 3. STAGE 2: THE CONTINUOUS GRID (Safe Forward-Fill)
-print("Stage 2: Building continuous timelines and applying forward-fill...")
-filled_timelines = []
-
-for event, group in df_hourly.groupby('event'):
-    # Pivot so each numerical bracket is its own column
-    pivot = group.pivot(index='t_hour', columns='labor_val', values='p')
-    
-    # Create the hourly ruler from the first to last trade of this report
-    full_idx = pd.date_range(start=pivot.index.min(), end=pivot.index.max(), freq='h')
-    pivot = pivot.reindex(full_idx)
-    
-    # Carry last traded price forward into silent hours
-    pivot = pivot.ffill()
-    
-    # Pre-launch hours remain 0
-    pivot = pivot.fillna(0)
-    
-    # Melt back into the ML structure
-    melted = pivot.reset_index().melt(id_vars='index', var_name='labor_val', value_name='p')
-    melted.rename(columns={'index': 't_hour'}, inplace=True)
-    melted['event'] = event
-    filled_timelines.append(melted)
-
-df_filled = pd.concat(filled_timelines, ignore_index=True)
-
-# 4. CALCULATE CONTRIBUTION
-df_filled['p_times_val'] = df_filled['p'] * df_filled['labor_val']
-
-# 5. STAGE 3: COLLAPSE into final Expected Unemployment Rate
-print("Stage 3: Collapsing into final signal...")
-df_active = df_filled[df_filled['p'] > 0]
-
-final_collapsed = df_active.groupby(['event', 't_hour']).agg({
-    'p_times_val': 'sum',      # THE EXPECTED UNEMPLOYMENT RATE
-    'p': 'sum',                # Probability Integrity (Target: 1.0)
-    'labor_val': 'nunique'     # Number of brackets active
-}).reset_index()
-
-# Final column formatting
-final_collapsed.rename(columns={
-    't_hour': 't', 
-    'p_times_val': 'expected_unemployment_rate', 
-    'p': 'sum_prob', 
-    'labor_val': 'outcome_count'
-}, inplace=True)
-
-# Save the mock data for the team
-output_name = 'LABOR_EXPECTED_UNEMPLOYMENT_FINAL_SIGNAL.csv'
-final_collapsed.to_csv(output_name, index=False)
-print(f"🏁 DONE: Saved {len(final_collapsed)} state-driven hours to {output_name}") 
-# %%
-
-# %%
-# ==========================================
-# PHASE 12: INFLATION YEARLY (V6 PORT - CUMULATIVE FIX)
-# ==========================================
-import pandas as pd
-import re
-import numpy as np
-
-# Load raw history (APA Reference: Polymarket, 2026)
-input_file = 'TOTAL_HISTORY_INF_YEARLY.csv'
-df = pd.read_csv(input_file)
-
-# 1. TIME STANDARDIZATION
-df['t'] = pd.to_datetime(df['t'], utc=True)
-df['t_hour'] = df['t'].dt.floor('h')
-
-def extract_inf_value(title):
-    """Rule: Find % and take 3 characters to the left."""
-    title = str(title)
-    if '%' in title:
-        idx = title.find('%')
-        val_str = title[max(0, idx-3):idx]
-        val_str = re.sub(r'[^0-9.]', '', val_str)
-        try: return float(val_str)
-        except: return 0.0
-    return 0.0
-
-def extract_year(slug):
-    """Isolates the target year (2025/2026) from the slug."""
-    match = re.search(r'(202[4-6])', slug)
-    return match.group(1) if match else "2025"
-
-df['inf_val'] = df['groupItemTitle'].apply(extract_inf_value)
-df['year'] = df['slug'].apply(extract_year)
-
-# 2. STAGE 1: DEDUPLICATE (Exact Hour Snapshots)
-print("Stage 1: Averaging duplicate snapshots within hours...")
-df_hourly = df.groupby(['year', 't_hour', 'inf_val'])['p'].mean().reset_index()
-
-# 3. STAGE 2: THE CONTINUOUS GRID (Safe Forward-Fill)
-print("Stage 2: Building continuous timelines and applying forward-fill...")
-filled_timelines = []
-
-for year, group in df_hourly.groupby('year'):
-    # Pivot so each cumulative threshold (e.g., 3.0, 4.0) is its own column
-    pivot = group.pivot(index='t_hour', columns='inf_val', values='p')
-    
-    # Create the perfect hourly timeline ruler
-    full_idx = pd.date_range(start=pivot.index.min(), end=pivot.index.max(), freq='h')
-    pivot = pivot.reindex(full_idx)
-    
-    # Safe Forward-Fill existing markets
-    pivot = pivot.ffill()
-    
-    # Pre-launch hours remain 0 (or NaNs)
-    pivot = pivot.fillna(0)
-    
-    # Melt back into the vertical format
-    melted = pivot.reset_index().melt(id_vars='index', var_name='inf_val', value_name='p')
-    melted.rename(columns={'index': 't_hour'}, inplace=True)
-    melted['year'] = year
-    filled_timelines.append(melted)
-
-df_filled = pd.concat(filled_timelines, ignore_index=True)
-
-# 4. STAGE 3: THE "CORRESPONDING" CUMULATIVE COLLAPSE
-print("Stage 3: Converting cumulative probabilities into expected inflation rate...")
-
-def calculate_expected_inflation(group):
-    # Sort by value to get thresholds in order (e.g. 3, 4, 5, 6...)
-    group = group.sort_values('inf_val')
-    vals = group['inf_val'].values
-    probs = group['p'].values # These are P(>X)
-    
-    # We define buckets: [Below min], [Between i and i+1], [Above max]
-    d_probs = []    # Probability Density
-    midpoints = []  # Bucket Midpoints
-    
-    # Bucket 0: Below lowest threshold
-    d_probs.append(1.0 - probs[0])
-    midpoints.append(max(0, vals[0] - 0.5))
-    
-    # Buckets i: Between thresholds
-    for i in range(len(vals) - 1):
-        # Probability of being between threshold A and B
-        density = probs[i] - probs[i+1]
-        d_probs.append(max(0, density)) # Handle minor market noise
-        midpoints.append((vals[i] + vals[i+1]) / 2.0)
-    
-    # Bucket Last: Above highest threshold
-    d_probs.append(probs[-1])
-    midpoints.append(vals[-1] + 0.5)
-    
-    # Normalize density to handle raw market noise
-    total_d = sum(d_probs)
-    if total_d > 0:
-        d_probs = [d / total_d for d in d_probs]
-    
-    # Calculate Expected Value
-    ev = sum(p * m for p, m in zip(d_probs, midpoints))
-    
-    return pd.Series({
-        'expected_inflation_rate': ev,
-        'sum_prob_raw': np.sum(probs),
-        'outcome_count': len(vals)
-    })
-
-final_collapsed = df_filled.groupby(['year', 't_hour']).apply(calculate_expected_inflation).reset_index()
-
-# Final column formatting
-final_collapsed.rename(columns={'t_hour': 't'}, inplace=True)
-
-# Save the final signal
-output_name = 'INF_YEARLY_FINAL_SIGNAL.csv'
-final_collapsed.to_csv(output_name, index=False)
-print(f"🏁 DONE: Saved {len(final_collapsed)} state-driven hours to {output_name}")
-# %%
-
-# %%
-# ==========================================
-# PHASE 13: MONTHLY INFLATION (V7 - ROBUST)
-# ==========================================
-import pandas as pd
-import re
-
-# Load raw history (APA Reference: Polymarket, 2026)
-input_file = 'TOTAL_HISTORY_INF_MONTHLY.csv'
-df = pd.read_csv(input_file)
-
-# 1. TIME STANDARDIZATION: Floor everything to the hour
-df['t'] = pd.to_datetime(df['t'], utc=True)
-df['t_hour'] = df['t'].dt.floor('h')
-
-def extract_inf_val(title):
-    """
-    Revised Extraction: Finds digits and dots before the % sign.
-    Ensures '2.8' and '2.80' are treated as the same mathematical value.
-    """
-    title = str(title)
-    if '%' in title:
-        # Extract the part before the %
-        match = re.search(r'([\d\.]+)%', title)
-        if match:
-            val_str = match.group(1)
             try:
-                return float(val_str)
+                start_point = int(pd.to_datetime(row.get('createdAt')).timestamp())
             except:
-                return 0.0
-    return 0.0
+                start_point = int(time.time()) - (90 * 24 * 60 * 60)
 
-def get_month_event(slug):
-    """Isolates the CPI month from the slug."""
-    match = re.search(r'(january|february|march|april|may|june|july|august|september|october|november|december)', slug, re.I)
-    return match.group(1).lower() if match else slug
+        mkt_new_history = vacuum_token_incremental(tid, row['slug'], start_point)
+        
+        if not mkt_new_history.empty:
+            mkt_new_history['token_id'] = tid
+            mkt_new_history['slug'] = row['slug']
+            # Normalizing titles to prevent "No Change" duplicates
+            mkt_new_history['groupItemTitle'] = str(row.get('groupItemTitle', 'N/A')).strip().title()
+            new_pillar_data.append(mkt_new_history)
 
-df['inf_val'] = df['groupItemTitle'].apply(extract_inf_val)
-df['event'] = df['slug'].apply(get_month_event)
-
-# Capture slug mapping to re-attach math values after the timeline fill
-slug_map = df[['slug', 'inf_val', 'event']].drop_duplicates()
-
-# 2. STAGE 1: DEDUPLICATE (Exact Hour Snapshots)
-print("Stage 1: Removing duplicate snapshots within hours...")
-df_hourly = df.groupby(['slug', 't_hour'])['p'].mean().reset_index()
-
-# 3. STAGE 2: THE CONTINUOUS GRID (Safe Forward-Fill)
-print("Stage 2: Building continuous timelines and applying forward-fill...")
-filled_timelines = []
-
-# Process each monthly report independently
-for event, group_event in df_hourly.merge(slug_map[['slug', 'event']], on='slug').groupby('event'):
-    
-    # Pivot so each outcome is an independent column
-    pivot = group_event.pivot(index='t_hour', columns='slug', values='p')
-    
-    # Create the perfect hourly ruler for this event
-    full_idx = pd.date_range(start=pivot.index.min(), end=pivot.index.max(), freq='h', tz='UTC')
-    pivot = pivot.reindex(full_idx)
-    
-    # Safe Forward-Fill (Carries last known price, ignores pre-birth hours)
-    pivot = pivot.ffill()
-    pivot = pivot.fillna(0)
-    
-    # Melt it back safely (Fixing the KeyError by explicitly naming columns)
-    pivot.index.name = 't_hour'
-    melted = pivot.reset_index().melt(id_vars='t_hour', var_name='slug', value_name='p')
-    melted['event'] = event
-    
-    filled_timelines.append(melted)
-
-df_filled = pd.concat(filled_timelines, ignore_index=True)
-
-# 4. RE-ATTACH NUMERICAL VALUES
-df_filled = df_filled.merge(slug_map[['slug', 'inf_val']], on='slug', how='left')
-
-# 5. STAGE 3: COLLAPSE (Weighted Average Expectation)
-print("Stage 3: Collapsing into final expected monthly inflation rates...")
-df_filled['p_times_val'] = df_filled['p'] * df_filled['inf_val']
-
-# Only count outcomes with real market weight
-df_active = df_filled[df_filled['p'] > 0]
-
-final_collapsed = df_active.groupby(['event', 't_hour']).agg({
-    'p_times_val': 'sum',      # The Raw Expected Move
-    'p': 'sum',                # Probability Integrity (Target: 1.0)
-    'slug': 'nunique'          # Number of active outcomes
-}).reset_index()
-
-# Final column formatting
-final_collapsed.rename(columns={
-    't_hour': 't', 
-    'p_times_val': 'expected_monthly_inflation', 
-    'p': 'sum_prob', 
-    'slug': 'outcome_count'
-}, inplace=True)
-
-# Save the master signal file
-output_name = 'INF_MONTHLY_YOY_FINAL_SIGNAL.csv'
-final_collapsed.to_csv(output_name, index=False)
-print(f"🏁 DONE: Saved {len(final_collapsed)} state-driven hours to {output_name}")
+    if new_pillar_data:
+        final_df = pd.concat(new_pillar_data, ignore_index=True)
+        final_df['t'] = pd.to_datetime(final_df['t'], unit='s', utc=True)
+        # Apply the floor fix so every row hits the exact hour mark
+        final_df['t'] = final_df['t'].dt.floor('h')
+        
+        file_exists = os.path.exists(output_name)
+        final_df.to_csv(output_name, mode='a', header=not file_exists, index=False)
+        print(f"🏁 PILLAR {pillar} UPDATED: Added {len(final_df)} 'Yes' probability rows.")
 # %%
+
+# %%
+import pandas as pd
+import os
+import re
+
+# ==========================================
+# CONFIGURATION
+# ==========================================
+print("--- STARTING TRANSPARENT FED PIPELINE: STEPS 1-4 ---")
+
+history_file = 'TOTAL_HISTORY_FED.csv'
+reference_file = 'FINAL_FED_MARKETS.csv'
+output_file = 'FINAL_FED_SIGNAL.csv'
+
+LOWER_BOUND = 0.90
+UPPER_BOUND = 1.10
+
+if not os.path.exists(history_file) or not os.path.exists(reference_file):
+    print("❌ Error: Files not found.")
+else:
+    # Load Data
+    df_history = pd.read_csv(history_file)
+    df_ref = pd.read_csv(reference_file)
+    df_history['t'] = pd.to_datetime(df_history['t'], utc=True)
+
+    # --- STEP 1: TIME FILTER (YOUR ORIGINAL LOGIC) ---
+    df_history = df_history[df_history['t'].dt.minute < 5].copy()
+    mapping = df_ref[['slug', 'endDate']].drop_duplicates()
+    df_mapped = df_history.merge(mapping, on='slug', how='left')
+    df_mapped['t_hour'] = df_mapped['t'].dt.floor('h')
+
+    # --- STEP 2: GRID GENERATION (YOUR ORIGINAL LOGIC) ---
+    all_meeting_grids = []
+    unique_meetings = df_mapped['endDate'].dropna().unique()
+    
+    for meeting_date in sorted(unique_meetings):
+        m_data = df_mapped[df_mapped['endDate'] == meeting_date]
+        m_pivot = m_data.pivot_table(index='t_hour', columns='groupItemTitle', values='p', aggfunc='last')
+        
+        # Timeline strictly from first to last trade
+        full_range = pd.date_range(start=m_pivot.index.min(), end=m_pivot.index.max(), freq='h', tz='UTC')
+        m_pivot = m_pivot.reindex(full_range).ffill()
+        
+        # Cleanup column noise
+        m_pivot = m_pivot.loc[:, m_pivot.columns.notna()]
+        if 'Nan' in m_pivot.columns: m_pivot = m_pivot.drop(columns=['Nan'])
+        
+        # Calculate Sum for Step 3
+        bracket_cols = [c for c in m_pivot.columns if c not in ['meeting_date']]
+        m_pivot['RAW_TOTAL_SUM'] = m_pivot[bracket_cols].sum(axis=1)
+        m_pivot['meeting_date'] = meeting_date
+        
+        all_meeting_grids.append(m_pivot.reset_index().rename(columns={'index': 't'}))
+
+    # --- STEP 3: QUALITY FILTERING (YOUR ORIGINAL LOGIC) ---
+    full_grid = pd.concat(all_meeting_grids, ignore_index=True)
+    df_clean = full_grid[(full_grid['RAW_TOTAL_SUM'] >= LOWER_BOUND) & 
+                         (full_grid['RAW_TOTAL_SUM'] <= UPPER_BOUND)].copy()
+
+    # --- STEP 4: AUTOMATED EV & TRANSPARENT NORMALIZATION ---
+    metadata = ['t', 'meeting_date', 'RAW_TOTAL_SUM']
+    prob_cols = [c for c in df_clean.columns if c not in metadata]
+    
+    # Map weights
+    weights = {}
+    for col in prob_cols:
+        numbers = re.findall(r'\d+', str(col))
+        val = int(numbers[0]) if numbers else 0
+        if "decrease" in col.lower() or "cut" in col.lower(): weights[col] = -val
+        elif "increase" in col.lower() or "hike" in col.lower(): weights[col] = val
+        else: weights[col] = 0
+
+    # 4A. Calculate RAW_EV (The "dirty" weighted sum)
+    df_clean['RAW_EV'] = 0
+    for col, weight in weights.items():
+        df_clean['RAW_EV'] += df_clean[col].fillna(0) * weight
+    
+    # 4B. Calculate NORMALIZED_EV (The final "clean" signal)
+    # This is the division that protects your deltas from sum-drift noise
+    df_clean['NORMALIZED_EV'] = df_clean['RAW_EV'] / df_clean['RAW_TOTAL_SUM']
+
+    # Export
+    final_cols = ['t', 'meeting_date', 'NORMALIZED_EV', 'RAW_EV', 'RAW_TOTAL_SUM'] + prob_cols
+    df_clean[final_cols].to_csv(output_file, index=False)
+    
+    print(f"\n✅ SUCCESS! File saved: {output_file}")
+    print("Side-by-side comparison (Raw vs Normalized):")
+    print(df_clean[['t', 'RAW_EV', 'NORMALIZED_EV', 'RAW_TOTAL_SUM']].head())
+# %%
+
+# %%
+import pandas as pd
+import os
+import re
+
+# ==========================================
+# CONFIGURATION
+# ==========================================
+print("--- STARTING TRANSPARENT GDP PIPELINE: STEPS 1-4 ---")
+
+history_file = 'TOTAL_HISTORY_GDP.csv'
+reference_file = 'FINAL_GDP_MARKETS.csv'
+output_file = 'FINAL_GDP_SIGNAL.csv'
+
+LOWER_BOUND = 0.90
+UPPER_BOUND = 1.10
+
+if not os.path.exists(history_file) or not os.path.exists(reference_file):
+    print("❌ Error: Files not found.")
+else:
+    # Load Data
+    df_history = pd.read_csv(history_file)
+    df_ref = pd.read_csv(reference_file)
+    df_history['t'] = pd.to_datetime(df_history['t'], utc=True)
+
+    # --- STEP 1: TIME FILTER & MAPPING ---
+    df_history = df_history[df_history['t'].dt.minute < 5].copy()
+    
+    # GDP Parsing Logic
+    def get_event_from_slug(slug):
+        m = re.search(r'(q\d-\d{4})', slug)
+        return m.group(1).upper() if m else 'UNKNOWN'
+
+    df_ref['event'] = df_ref['slug'].apply(get_event_from_slug)
+    
+    # Mapping dictionaries (Using internal Polymarket IDs)
+    slug_to_negRisk = dict(zip(df_ref['slug'], df_ref['negRiskMarketID']))
+    slug_to_event = dict(zip(df_ref['slug'], df_ref['event']))
+
+    df_history['event'] = df_history['slug'].map(slug_to_event)
+    df_history['market_set_id'] = df_history['slug'].map(slug_to_negRisk)
+    
+    df_mapped = df_history.dropna(subset=['market_set_id', 'event']).copy()
+    df_mapped['t_hour'] = df_mapped['t'].dt.floor('h')
+
+    # --- STEP 2: GRID GENERATION (PARALLEL MARKETS) ---
+    all_market_grids = []
+    unique_events = df_mapped['event'].unique()
+    
+    for event in sorted(unique_events):
+        e_data = df_mapped[df_mapped['event'] == event]
+        
+        for set_id in e_data['market_set_id'].unique():
+            set_data = e_data[e_data['market_set_id'] == set_id]
+            m_pivot = set_data.pivot_table(index='t_hour', columns='slug', values='p', aggfunc='last')
+            
+            # Timeline strictly from first to last trade
+            full_range = pd.date_range(start=m_pivot.index.min(), end=m_pivot.index.max(), freq='h', tz='UTC')
+            m_pivot = m_pivot.reindex(full_range).ffill()
+            
+            # Cleanup column noise
+            m_pivot = m_pivot.loc[:, m_pivot.columns.notna()]
+            if 'Nan' in m_pivot.columns: m_pivot = m_pivot.drop(columns=['Nan'])
+            
+            # Calculate Sum for Step 3
+            bracket_cols = [c for c in m_pivot.columns]
+            m_pivot['RAW_TOTAL_SUM'] = m_pivot[bracket_cols].sum(axis=1)
+            m_pivot['event'] = event
+            m_pivot['market_set_id'] = set_id
+            
+            all_market_grids.append(m_pivot.reset_index().rename(columns={'index': 't'}))
+
+    # --- STEP 3: QUALITY FILTERING ---
+    full_grid = pd.concat(all_market_grids, ignore_index=True)
+    df_clean = full_grid[(full_grid['RAW_TOTAL_SUM'] >= LOWER_BOUND) & 
+                         (full_grid['RAW_TOTAL_SUM'] <= UPPER_BOUND)].copy()
+
+    # --- STEP 4: AUTOMATED EV & TRANSPARENT NORMALIZATION ---
+    metadata = ['t', 'event', 'market_set_id', 'RAW_TOTAL_SUM']
+    prob_cols = [c for c in df_clean.columns if c not in metadata]
+    
+    # Map weights
+    def get_weight(slug):
+        event_match = re.search(r'(q\d-\d{4})', slug)
+        ev = event_match.group(1) if event_match else 'unknown'
+        bracket_part = slug.replace(ev, '').replace('pt', '.')
+        nums = re.findall(r'(\d+(?:\.\d+)?)', bracket_part)
+        nums = [float(n) for n in nums]
+        
+        if 'between' in slug and len(nums) >= 2:
+            is_legacy = (ev in ['q1-2025', 'q2-2025']) and ('pt' not in slug)
+            mid = (nums[0] + nums[1]) / 2
+            return -mid if (is_legacy and nums[0] < nums[1]) else mid
+        elif 'less-than' in slug and nums:
+            is_legacy = (ev in ['q1-2025', 'q2-2025']) and ('pt' not in slug)
+            return -nums[0] if is_legacy else nums[0]
+        elif ('greater-than' in slug or 'more' in slug) and nums:
+            return nums[0]
+        return 0
+
+    weights = {col: get_weight(col) for col in prob_cols}
+
+    # 4A. Calculate RAW_EV (The "dirty" weighted sum)
+    df_clean['RAW_EV'] = 0.0
+    for col, weight in weights.items():
+        df_clean['RAW_EV'] += df_clean[col].fillna(0) * weight
+    
+    # 4B. Calculate NORMALIZED_EV (The final "clean" signal percentage)
+    df_clean['NORMALIZED_EV'] = df_clean['RAW_EV'] / df_clean['RAW_TOTAL_SUM']
+
+    # 4C. Calculate BASE-100 INDEX (The fix for macro comparisons)
+    df_clean['EXPECTED_GDP_INDEX'] = 100 + df_clean['NORMALIZED_EV']
+
+    # Export
+    final_cols = ['t', 'event', 'market_set_id', 'EXPECTED_GDP_INDEX', 'NORMALIZED_EV', 'RAW_EV', 'RAW_TOTAL_SUM'] + prob_cols
+    df_clean = df_clean.sort_values(['event', 't'])
+    df_clean[final_cols].to_csv(output_file, index=False)
+    
+    print(f"\n✅ SUCCESS! File saved: {output_file}")
+    print("Side-by-side comparison (Raw EV vs Normalized % vs Base-100 Index):")
+    print(df_clean[['t', 'RAW_EV', 'NORMALIZED_EV', 'EXPECTED_GDP_INDEX']].head())
+print("=========================================================")
+# %%
+
+# %%
+import pandas as pd
+import os
+import re
+
+# ==========================================
+# CONFIGURATION
+# ==========================================
+print("--- STARTING TRANSPARENT LABOR PIPELINE: STEPS 1-4 ---")
+
+history_file = 'TOTAL_HISTORY_LABOR.csv'
+reference_file = 'FINAL_LABOR_MARKETS.csv'
+output_file = 'FINAL_LABOR_SIGNAL.csv'
+
+# Quality Gate adjusted to 0.90 - 1.10 to improve data retention while filtering structural errors
+LOWER_BOUND = 0.90
+UPPER_BOUND = 1.10
+
+if not os.path.exists(history_file) or not os.path.exists(reference_file):
+    print("❌ Error: Files not found.")
+else:
+    # Load Data
+    df_history = pd.read_csv(history_file)
+    df_ref = pd.read_csv(reference_file)
+    df_history['t'] = pd.to_datetime(df_history['t'], utc=True)
+
+    # --- STEP 1: TIME FILTER & MAPPING ---
+    df_history = df_history[df_history['t'].dt.minute < 5].copy()
+    
+    # Map directly to endDate to identify the target unemployment release
+    mapping = df_ref[['slug', 'endDate']].drop_duplicates()
+    df_mapped = df_history.merge(mapping, on='slug', how='left')
+    df_mapped['t_hour'] = df_mapped['t'].dt.floor('h')
+
+    # --- STEP 2: GRID GENERATION ---
+    all_grids = []
+    unique_events = df_mapped['endDate'].dropna().unique()
+    
+    for event in sorted(unique_events):
+        m_data = df_mapped[df_mapped['endDate'] == event]
+        m_pivot = m_data.pivot_table(index='t_hour', columns='groupItemTitle', values='p', aggfunc='last')
+        
+        # Timeline strictly from first to last trade
+        full_range = pd.date_range(start=m_pivot.index.min(), end=m_pivot.index.max(), freq='h', tz='UTC')
+        m_pivot = m_pivot.reindex(full_range).ffill()
+        
+        # Cleanup column noise
+        m_pivot = m_pivot.loc[:, m_pivot.columns.notna()]
+        if 'Nan' in m_pivot.columns: m_pivot = m_pivot.drop(columns=['Nan'])
+        
+        # Calculate Total Sum for normalization and quality filtering
+        bracket_cols = [c for c in m_pivot.columns]
+        m_pivot['RAW_TOTAL_SUM'] = m_pivot[bracket_cols].sum(axis=1)
+        m_pivot['endDate'] = event
+        
+        all_grids.append(m_pivot.reset_index().rename(columns={'index': 't'}))
+
+    # --- STEP 3: QUALITY FILTERING ---
+    full_grid = pd.concat(all_grids, ignore_index=True)
+    df_clean = full_grid[(full_grid['RAW_TOTAL_SUM'] >= LOWER_BOUND) & 
+                         (full_grid['RAW_TOTAL_SUM'] <= UPPER_BOUND)].copy()
+
+    # --- STEP 4: AUTOMATED EV, NORMALIZATION & INDEX CONVERSION ---
+    metadata = ['t', 'endDate', 'RAW_TOTAL_SUM']
+    prob_cols = [c for c in df_clean.columns if c not in metadata]
+    
+    # The clean Labor Parser: Extracts numerical values from bracket titles
+    def get_weight(title):
+        nums = re.findall(r'(\d+\.\d+)', str(title))
+        return float(nums[0]) if nums else 0.0
+
+    weights = {col: get_weight(col) for col in prob_cols}
+
+    # 4A. Calculate RAW_EV (Dirty weighted sum)
+    df_clean['RAW_EV'] = 0.0
+    for col, weight in weights.items():
+        df_clean['RAW_EV'] += df_clean[col].fillna(0) * weight
+    
+    # 4B. Calculate EXPECTED UNEMPLOYMENT RATE (Clean normalized percentage)
+    # Normalization divides the weighted sum by the total probability to correct for spread drift
+    df_clean['EXPECTED_UNEMPLOYMENT_RATE'] = df_clean['RAW_EV'] / df_clean['RAW_TOTAL_SUM']
+
+    # 4C. Calculate BASE-100 INDEX
+    # Converting to a Base-100 Index aligns the signal with S&P and GDP index formatting
+    df_clean['EXPECTED_UNEMPLOYMENT_INDEX'] = 100 + df_clean['EXPECTED_UNEMPLOYMENT_RATE']
+
+    # Export
+    final_cols = ['t', 'endDate', 'EXPECTED_UNEMPLOYMENT_INDEX', 'EXPECTED_UNEMPLOYMENT_RATE', 'RAW_TOTAL_SUM'] + prob_cols
+    df_clean = df_clean.sort_values(['endDate', 't'])
+    df_clean[final_cols].to_csv(output_file, index=False)
+    
+    print(f"\n✅ SUCCESS! File saved: {output_file}")
+    print("Side-by-side comparison (Raw EV vs Normalized % vs Base-100 Index):")
+    print(df_clean[['t', 'RAW_EV', 'EXPECTED_UNEMPLOYMENT_RATE', 'EXPECTED_UNEMPLOYMENT_INDEX']].head())
+# %%
+
+# %%
+import pandas as pd
+import os
+import re
+
+# ==========================================
+# CONFIGURATION
+# ==========================================
+print("--- STARTING INFLATION YEARLY PIPELINE: STEPS 1-4 ---")
+
+history_file = 'TOTAL_HISTORY_INF_YEARLY.csv'
+reference_file = 'FINAL_INFLATION_YEARLY.csv'
+output_file = 'FINAL_INF_YEARLY_SIGNAL.csv'
+
+if not os.path.exists(history_file) or not os.path.exists(reference_file):
+    print("❌ Error: Files not found.")
+else:
+    # Load Data
+    df_history = pd.read_csv(history_file)
+    df_ref = pd.read_csv(reference_file)
+    df_history['t'] = pd.to_datetime(df_history['t'], utc=True)
+
+    # --- STEP 1: TIME FILTER & YEAR MAPPING ---
+    print("▶ [Step 1/4] Snapping to hours and mapping target years...")
+    df_history = df_history[df_history['t'].dt.minute < 5].copy()
+    df_history['t_hour'] = df_history['t'].dt.floor('h')
+
+    def extract_year(slug):
+        m = re.search(r'202\d', str(slug))
+        return m.group(0) if m else "UNKNOWN"
+
+    mapping = df_ref[['slug', 'endDate']].drop_duplicates()
+    df_mapped = df_history.merge(mapping, on='slug', how='left')
+    df_mapped['target_year'] = df_mapped['slug'].apply(extract_year)
+
+    # --- STEP 2: GRID GENERATION (THE LADDER) ---
+    print("▶ [Step 2/4] Generating probability ladders per year...")
+    all_year_grids = []
+    unique_years = sorted(df_mapped['target_year'].unique())
+
+    for year in unique_years:
+        if year == "UNKNOWN": continue
+        year_data = df_mapped[df_mapped['target_year'] == year]
+        
+        # Pivot thresholds into columns
+        pivot = year_data.pivot_table(index='t_hour', columns='groupItemTitle', values='p', aggfunc='last')
+        
+        # Continuous hourly timeline
+        full_range = pd.date_range(start=pivot.index.min(), end=pivot.index.max(), freq='h', tz='UTC')
+        pivot = pivot.reindex(full_range).ffill()
+        pivot['target_year'] = year
+        all_year_grids.append(pivot.reset_index().rename(columns={'index': 't'}))
+
+    full_grid = pd.concat(all_year_grids, ignore_index=True)
+
+    # --- STEP 3: LADDER FILTER (CONSISTENCY CHECK) ---
+    print("▶ [Step 3/4] Filtering incoherent data (Inverted Ladders)...")
+    threshold_cols = sorted([c for c in full_grid.columns if 'Above' in str(c)], 
+                            key=lambda x: float(re.findall(r'\d+\.?\d*', str(x))[0]))
+
+    violations = pd.Series(False, index=full_grid.index)
+    for i in range(len(threshold_cols) - 1):
+        low_t = threshold_cols[i]
+        high_t = threshold_cols[i+1]
+        # Violation if Higher Threshold is more expensive than Lower Threshold
+        mask = full_grid[low_t].notna() & full_grid[high_t].notna()
+        violations = violations | (mask & (full_grid[high_t] > full_grid[low_t]))
+
+    df_clean = full_grid[~violations].copy()
+
+    # --- STEP 4: DISCRETE EV & BASE-100 INDEX ---
+    print("▶ [Step 4/4] Calculating Expected Value and Base-100 Index...")
+    threshold_vals = [float(re.findall(r'\d+\.?\d*', c)[0]) for c in threshold_cols]
+
+    def calculate_discrete_ev(row):
+        ev = 0.0
+        # 1. Below lowest threshold (e.g. 0% to 3%)
+        p_bottom = 1.0 - row[threshold_cols[0]]
+        w_bottom = threshold_vals[0] / 2
+        if not pd.isna(p_bottom): ev += p_bottom * w_bottom
+        
+        # 2. Middle brackets (e.g. 3% to 4%)
+        for i in range(len(threshold_vals) - 1):
+            p_bracket = row[threshold_cols[i]] - row[threshold_cols[i+1]]
+            w_bracket = (threshold_vals[i] + threshold_vals[i+1]) / 2
+            if not pd.isna(p_bracket): ev += p_bracket * w_bracket
+            
+        # 3. Top bracket (e.g. >10%)
+        p_top = row[threshold_cols[-1]]
+        w_top = threshold_vals[-1] + 1.0 # 1% conservative buffer
+        if not pd.isna(p_top): ev += p_top * w_top
+        
+        return ev
+
+    df_clean['EXPECTED_INFLATION_RATE'] = df_clean.apply(calculate_discrete_ev, axis=1)
+    df_clean['EXPECTED_INFLATION_INDEX'] = 100 + df_clean['EXPECTED_INFLATION_RATE']
+
+    # Export
+    final_cols = ['t', 'target_year', 'EXPECTED_INFLATION_INDEX', 'EXPECTED_INFLATION_RATE'] + threshold_cols
+    df_clean = df_clean.sort_values(['target_year', 't'])
+    df_clean[final_cols].to_csv(output_file, index=False)
+    
+    # Audit Report
+    print("\n=========================================================")
+    print("  YEARLY INFLATION PIPELINE COMPLETE (APA Standard)")
+    print("=========================================================")
+    print(f"File Saved:           {output_file}")
+    print(f"Hours Retained:       {len(df_clean)} of {len(full_grid)} ({len(df_clean)/len(full_grid)*100:.1f}%)")
+    print(f"Forecasted Years:     {df_clean['target_year'].unique().tolist()}")
+    print("\nPreview of Index Signals:")
+    print(df_clean[['t', 'target_year', 'EXPECTED_INFLATION_RATE', 'EXPECTED_INFLATION_INDEX']].head())
+    print("=========================================================")
+# %%
+
+# %%
+import pandas as pd
+import os
+import re
+
+# ==========================================
+# CONFIGURATION
+# ==========================================
+# Following the pipeline structure established for Fed, Labor, and Yearly Inflation.
+# This script processes Monthly Inflation markets using a Smart Parser to handle 
+# cumulative and discrete brackets without a reference file.
+
+print("--- STARTING MONTHLY INFLATION PIPELINE: STEPS 1-4 ---")
+
+history_file = 'TOTAL_HISTORY_INF_MONTHLY.csv'
+output_file = 'FINAL_INF_MONTHLY_SIGNAL.csv'
+
+# Quality Gate: 0.90 - 1.10 (Academically defensible range for AMM liquidity)
+LOWER_BOUND = 0.90
+UPPER_BOUND = 1.10
+
+if not os.path.exists(history_file):
+    print(f"❌ Error: {history_file} not found.")
+else:
+    # 1. LOAD DATA
+    df_raw = pd.read_csv(history_file)
+    df_raw['t'] = pd.to_datetime(df_raw['t'], utc=True)
+
+    # --- STEP 1: SMART MAPPING & YEAR DEDUCTION ---
+    print("▶ [Step 1/4] Extracting metadata from slugs and deducing target years...")
+    
+    # Time Snapping: Keeping snapshots from the first 5 minutes of each hour
+    df_step1 = df_raw[df_raw['t'].dt.minute < 5].copy()
+    df_step1['t_hour'] = df_step1['t'].dt.floor('h')
+
+    def parse_smart_slug(slug):
+        months = ['january', 'february', 'march', 'april', 'may', 'june', 
+                  'july', 'august', 'september', 'october', 'november', 'december']
+        
+        slug_l = slug.lower()
+        # Identify Target Month
+        target_month = next((m for m in months if m in slug_l), 'unknown')
+        
+        # Identify Target Value (handles '2pt8' -> 2.8)
+        value_match = re.search(r'(\d+)pt(\d+)', slug_l)
+        target_val = float(f"{value_match.group(1)}.{value_match.group(2)}") if value_match else 0.0
+        
+        # Categorize Bracket Format (Discrete, Greater, or Less)
+        is_greater = any(x in slug_l for x in ['or-more', '≥', 'greater'])
+        is_less = any(x in slug_l for x in ['or-less', '≤', 'less'])
+        
+        return pd.Series([target_month, target_val, is_greater, is_less])
+
+    df_step1[['target_month', 'target_val', 'is_greater', 'is_less']] = df_step1['slug'].apply(parse_smart_slug)
+
+    # Year Deduction: If trading in late 2025 for 'January', target is Jan 2026
+    def deduce_year(row):
+        month_map = {m: i+1 for i, m in enumerate(['january', 'february', 'march', 'april', 'may', 'june', 
+                                                  'july', 'august', 'september', 'october', 'november', 'december'])}
+        target_m_num = month_map.get(row['target_month'], 0)
+        trade_year = row['t'].year
+        trade_month = row['t'].month
+        if target_m_num > 0 and trade_month > (target_m_num + 1):
+            return trade_year + 1
+        return trade_year
+
+    df_step1['target_year'] = df_step1.apply(deduce_year, axis=1)
+    df_step1['event_label'] = df_step1['target_month'].str.capitalize() + "-" + df_step1['target_year'].astype(str)
+
+    # --- STEP 2: GRID GENERATION (THE MATRIX) ---
+    print("▶ [Step 2/4] Generating hourly probability matrices...")
+    all_grids = []
+    unique_events = sorted(df_step1['event_label'].unique())
+
+    for event in unique_events:
+        event_data = df_step1[df_step1['event_label'] == event]
+        
+        # Pivot: Time as index, Titles as columns
+        pivot = event_data.pivot_table(index='t_hour', columns='groupItemTitle', values='p', aggfunc='last')
+        
+        # Reindex to ensure continuous hourly history
+        full_range = pd.date_range(start=pivot.index.min(), end=pivot.index.max(), freq='h', tz='UTC')
+        pivot = pivot.reindex(full_range).ffill()
+        
+        # Calculate RAW_TOTAL_SUM for the Quality Gate
+        bracket_cols = [c for c in pivot.columns if c not in ['event_label', 't']]
+        pivot['RAW_TOTAL_SUM'] = pivot[bracket_cols].sum(axis=1)
+        pivot['event_label'] = event
+        
+        all_grids.append(pivot.reset_index().rename(columns={'index': 't'}))
+
+    full_grid = pd.concat(all_grids, ignore_index=True)
+
+    # --- STEP 3: QUALITY FILTERING ---
+    print(f"▶ [Step 3/4] Filtering data with {LOWER_BOUND}-{UPPER_BOUND} gate...")
+    df_clean = full_grid[(full_grid['RAW_TOTAL_SUM'] >= LOWER_BOUND) & 
+                         (full_grid['RAW_TOTAL_SUM'] <= UPPER_BOUND)].copy()
+
+    # --- STEP 4: EV, NORMALIZATION & INDEXING ---
+    print("▶ [Step 4/4] Calculating Expected Value and Base-100 Index...")
+    
+    metadata = ['t', 'event_label', 'RAW_TOTAL_SUM']
+    prob_cols = [c for c in df_clean.columns if c not in metadata]
+
+    # Weights parser (extracts numerical level from title)
+    def get_weight(title):
+        nums = re.findall(r'(\d+\.\d+|\d+)', str(title))
+        return float(nums[0]) if nums else 0.0
+
+    weights = {col: get_weight(col) for col in prob_cols}
+
+    # 4A. Calculate RAW_EV
+    df_clean['RAW_EV'] = 0.0
+    for col, weight in weights.items():
+        df_clean['RAW_EV'] += df_clean[col].fillna(0) * weight
+    
+    # 4B. NORMALIZATION
+    # Corrects for AMM spread drift (e.g., if sum is 1.017, we divide by 1.017)
+    df_clean['EXPECTED_MONTHLY_INF_RATE'] = df_clean['RAW_EV'] / df_clean['RAW_TOTAL_SUM']
+
+    # 4C. BASE-100 INDEX
+    # Aligns signal with S&P/GDP indexing standards
+    df_clean['EXPECTED_MONTHLY_INF_INDEX'] = 100 + df_clean['EXPECTED_MONTHLY_INF_RATE']
+
+    # EXPORT FINAL SIGNAL
+    final_cols = ['t', 'event_label', 'EXPECTED_MONTHLY_INF_INDEX', 'EXPECTED_MONTHLY_INF_RATE', 'RAW_TOTAL_SUM'] + prob_cols
+    df_clean = df_clean.sort_values(['event_label', 't'])
+    df_clean[final_cols].to_csv(output_file, index=False)
+
+    # --- APA STANDARDIZED AUDIT REPORT ---
+    print("\n" + "="*60)
+    print("  MONTHLY INFLATION PIPELINE COMPLETE (APA Standard)")
+    print("="*60)
+    print(f"File Saved:           {output_file}")
+    print(f"Initial Grid Rows:    {len(full_grid)}")
+    print(f"Filtered Rows:        {len(df_clean)} ({len(df_clean)/len(full_grid)*100:.1f}% retention)")
+    print(f"Events Processed:     {len(unique_events)}")
+    print("\nHead of Final Index:")
+    print(df_clean[['t', 'event_label', 'EXPECTED_MONTHLY_INF_RATE', 'EXPECTED_MONTHLY_INF_INDEX']].head())
+    print("="*60)
+# %%    
 
 # %%
 # ==========================================
@@ -1295,24 +1286,24 @@ import pandas as pd
 # Configuration: Mapping pillars to files and their specific feature columns
 macro_config = {
     "FED": {
-        "file": "FED_MEETINGS_FINAL_SIGNAL.csv",
-        "feature": "expected_move_bps"
+        "file": "FINAL_FED_SIGNAL.csv",
+        "feature": "NORMALIZED_EV"
     },
     "GDP": {
-        "file": "GDP_EXPECTED_GROWTH_FINAL_SIGNAL.csv",
-        "feature": "expected_gdp_growth"
+        "file": "FINAL_GDP_SIGNAL.csv",
+        "feature": "EXPECTED_GDP_INDEX"
     },
     "LABOR": {
-        "file": "LABOR_EXPECTED_UNEMPLOYMENT_FINAL_SIGNAL.csv",
-        "feature": "expected_unemployment_rate"
+        "file": "FINAL_LABOR_SIGNAL.csv",
+        "feature": "EXPECTED_UNEMPLOYMENT_INDEX"
     },
     "INF_YEARLY": {
-        "file": "INF_YEARLY_FINAL_SIGNAL.csv",
-        "feature": "expected_inflation_rate"
+        "file": "FINAL_INF_YEARLY_SIGNAL.csv",
+        "feature": "EXPECTED_INFLATION_INDEX"
     },
     "INF_MONTHLY": {
-        "file": "INF_MONTHLY_YOY_FINAL_SIGNAL.csv",
-        "feature": "expected_monthly_inflation"
+        "file": "FINAL_INF_MONTHLY_SIGNAL.csv",
+        "feature": "EXPECTED_MONTHLY_INF_INDEX"
     }
 }
 
@@ -1378,117 +1369,69 @@ if __name__ == "__main__":
 
 # %%
 # ==========================================
-# PHASE 15: MASTER TABLE WITH 10 BOUNDARY DUMMIES
+# PHASE 15: UNIFIED DUMMIES & DELTA TRANSFORMATION
 # ==========================================
 import pandas as pd
+import os
 
-# Define our 5 processed signal files and their identifying event column
+print("--- GENERATING DELTA-TRANSFORMED FEATURE DATASET ---")
+
+# 1. Configuration: Mapping established names and event columns
 pillar_map = {
-    "FED": {"file": "FED_MEETINGS_FINAL_SIGNAL.csv", "event_col": "meeting", "feature": "expected_move_bps"},
-    "GDP": {"file": "GDP_EXPECTED_GROWTH_FINAL_SIGNAL.csv", "event_col": "quarter", "feature": "expected_gdp_growth"},
-    "LABOR": {"file": "LABOR_EXPECTED_UNEMPLOYMENT_FINAL_SIGNAL.csv", "event_col": "event", "feature": "expected_unemployment_rate"},
-    "INF_YEARLY": {"file": "INF_YEARLY_FINAL_SIGNAL.csv", "event_col": "year", "feature": "expected_inflation_rate"},
-    "INF_MONTHLY": {"file": "INF_MONTHLY_YOY_FINAL_SIGNAL.csv", "event_col": "event", "feature": "expected_monthly_inflation"}
+    "FED": {"file": "FINAL_FED_SIGNAL.csv", "event_col": "meeting_date", "feature": "NORMALIZED_EV"},
+    "GDP": {"file": "FINAL_GDP_SIGNAL.csv", "event_col": "event", "feature": "EXPECTED_GDP_INDEX"},
+    "LABOR": {"file": "FINAL_LABOR_SIGNAL.csv", "event_col": "endDate", "feature": "EXPECTED_UNEMPLOYMENT_INDEX"},
+    "INF_YEARLY": {"file": "FINAL_INF_YEARLY_SIGNAL.csv", "event_col": "target_year", "feature": "EXPECTED_INFLATION_INDEX"},
+    "INF_MONTHLY": {"file": "FINAL_INF_MONTHLY_SIGNAL.csv", "event_col": "event_label", "feature": "EXPECTED_MONTHLY_INF_INDEX"}
 }
 
-def create_master_with_dummies():
-    # 1. Load the Master Hourly Backbone we created in Phase 14
-    # (Starting 2025-01-01)
-    master_df = pd.read_csv('MASTER_MACRO_HOURLY_SIGNAL.csv')
-    master_df['t'] = pd.to_datetime(master_df['t'], utc=True)
-    
-    print("🛠️  Generating 10 Dummies (Start/End flags for all pillars)...")
-    
+input_file = 'MASTER_MACRO_HOURLY_SIGNAL.csv'
+output_file = 'MASTER_FEATURE_DATASET.csv'
+
+if not os.path.exists(input_file):
+    print(f"❌ Error: {input_file} not found. Run Phase 14 first.")
+else:
+    # 2. Load the Backbone
+    df = pd.read_csv(input_file)
+    df['t'] = pd.to_datetime(df['t'], utc=True)
+
+    print("🛠️  Generating Dummies and Transforming Indices to Deltas...")
+
     for name, cfg in pillar_map.items():
+        feat = cfg['feature']
+        
+        # --- THE DELTA TRANSFORMATION ---
+        # As per your snippet, we replace the absolute level with the 1-hour delta
+        if feat in df.columns:
+            df[feat] = df[feat].diff()
+            print(f"✅ {feat}: Converted to Hourly Delta.")
+
+        # --- THE BOUNDARY DUMMIES ---
         try:
-            # Load the original signal file to find the true birth/death of each market
-            df = pd.read_csv(cfg['file'])
-            df['t'] = pd.to_datetime(df['t'], utc=True)
+            df_source = pd.read_csv(cfg['file'])
+            df_source['t'] = pd.to_datetime(df_source['t'], utc=True)
             
-            # Find the FIRST hour and LAST hour for every single market in this pillar
-            # (e.g. Find when the 'September Fed Meeting' started and ended)
-            event_bounds = df.groupby(cfg['event_col'])['t'].agg(['min', 'max']).reset_index()
+            # Find the first and last hour for every unique market/contract
+            bounds = df_source.groupby(cfg['event_col'])['t'].agg(['min', 'max']).reset_index()
             
-            start_times = set(event_bounds['min'])
-            end_times = set(event_bounds['max'])
+            start_times = set(bounds['min'])
+            end_times = set(bounds['max'])
             
-            # Create the 2 dummy columns for this pillar
-            start_col = f"{name.lower()}_market_start"
-            end_col = f"{name.lower()}_market_end"
+            df[f"{name.lower()}_market_start"] = df['t'].isin(start_times).astype(int)
+            df[f"{name.lower()}_market_end"] = df['t'].isin(end_times).astype(int)
             
-            # Map the dummies: 1 if this timestamp is a start/end, 0 otherwise
-            master_df[start_col] = master_df['t'].isin(start_times).astype(int)
-            master_df[end_col] = master_df['t'].isin(end_times).astype(int)
+            print(f"✅ {name}: Boundary Dummies added.")
             
-            print(f"✅ Created {start_col} and {end_col}")
-            
-        except FileNotFoundError:
-            print(f"⚠️  Skipping {name}: {cfg['file']} not found.")
-            # Create columns as 0s so the team's code doesn't break
-            master_df[f"{name.lower()}_market_start"] = 0
-            master_df[f"{name.lower()}_market_end"] = 0
+        except Exception as e:
+            print(f"⚠️  {name}: Dummies skipped ({e}).")
+            df[f"{name.lower()}_market_start"] = 0
+            df[f"{name.lower()}_market_end"] = 0
 
-    # 2. THE DELTA CHECK (Capturing "Change")
-    # As we discussed, dummies fix the noise, but 'Change' captures the momentum.
-    # Let's add the 1-hour change for the Fed as an example:
-    master_df['fed_move_delta_1h'] = master_df['expected_move_bps'].diff()
-
-    # 3. EXPORT FINAL MASTER FEATURE DATASET
-    output_name = 'MASTER_FEATURE_DATASET.csv'
-    master_df.to_csv(output_name, index=False)
+    # 3. FINAL EXPORT
+    df.to_csv(output_file, index=False)
     
-    print(f"\n🏁 MASTER DATASET READY: {output_name}")
-    print(f"Total Rows: {len(master_df)}")
-    print(f"Total Columns: {len(master_df.columns)}")
-
-if __name__ == "__main__":
-    create_master_with_dummies()
-# %%
-
-# %%
-import pandas as pd
-
-# Load the dataset
-df = pd.read_csv('MASTER_FEATURE_DATASET.csv')
-
-# Identify and delete any columns containing "delta" in the header
-cols_to_drop = [c for c in df.columns if 'delta' in c.lower()]
-df.drop(columns=cols_to_drop, inplace=True)
-
-# Save the updated file back to the same filename
-df.to_csv('MASTER_FEATURE_DATASET.csv', index=False)
-
-print(f"Successfully updated MASTER_FEATURE_DATASET.csv. Removed columns: {cols_to_drop}")
-# %%
-
-# %%
-import pandas as pd
-
-# Load the master feature dataset
-file_name = 'MASTER_FEATURE_DATASET.csv'
-df = pd.read_csv(file_name)
-
-# Define the five macro features to be transformed
-features = [
-    'expected_move_bps', 
-    'expected_gdp_growth', 
-    'expected_unemployment_rate', 
-    'expected_inflation_rate', 
-    'expected_monthly_inflation'
-]
-
-# Transform each column into a Delta (Current Value - Previous Hour Value)
-for col in features:
-    if col in df.columns:
-        # We replace the absolute level with the 1-hour delta
-        df[col] = df[col].diff()
-
-# Save the updated dataset
-df.to_csv(file_name, index=False)
-
-print(f"✅ Successfully converted the 5 macro features to Deltas in {file_name}")
-# Note: The first row (2025-01-01 00:00) will now be NaN for these columns 
-# because there is no previous hour to calculate a delta from.
+    print(f"\n🏁 SUCCESS: {output_file} created.")
+    print(f"Note: The first row of deltas will be NaN.")
 # %%
 
 # %%
@@ -1921,42 +1864,146 @@ print("Phase 2 Complete. Here is the processed mini-dataset:\n")
 print(df_processed_events)
 # %%
 
+
+# %%
+# ==========================================
+# PHASE 3: THE FINAL MERGE Annnouncement and Assets
+# ==========================================
+
+# 1. Merge the Master Timeline with our Processed Events
+df_merged = pd.merge(df_timeline, df_processed_events, on='Date', how='left')
+
+# 2. Pivot the 'event_type' into individual columns (Dummies)
+# This creates a column for each: FOMC, CPI, Employment, GDP
+df_final = pd.get_dummies(df_merged, columns=['event_type'], prefix='Ann')
+
+# 3. Clean up column names (e.g., 'Ann_CPI', 'Ann_FOMC')
+# get_dummies puts 0s and 1s, but we need to ensure the hourly rows with NO events stay 0
+# Currently, those rows would be all 0s anyway because of the 'left' merge.
+
+# 4. (Optional) If an event appears multiple times in one hour, we sum/max them 
+# to keep exactly one row per hour.
+df_final = df_final.groupby('Date').max().reset_index()
+
+# Fill any NaNs with 0 (rows where no announcement happened)
+df_final = df_final.fillna(0)
+
+# Cast dummy columns to integer to avoid boolean/float errors
+for col in df_final.columns:
+    if col.startswith('Ann_'):
+        df_final[col] = df_final[col].astype(int)
+
+# Save the final product
+df_final.to_csv('Final_Announcement_Dummies.csv', index=False)
+
+print("\nMISSION ACCOMPLISHED: 'Final_Announcement_Dummies.csv' is ready for the model.")
+print(df_final[df_final['Ann_CPI'] == 1].head()) # Sanity check for a CPI event
+
+# ==========================================
+# THE ULTIMATE MERGE
+# ==========================================
+df_master_merged = pd.merge(df, df_final, how='left', on='Date')
+df_master_merged.to_csv('MASTER_ASSET_AND_ANNOUNCEMENTS.csv', index=False)
+print("Merged DataFrame saved to MASTER_ASSET_AND_ANNOUNCEMENTS.csv")
+# %%
+
 # %%
 # ======================================================
 # THE FINAL INTEGRATION: ASSETS + ANNOUNCEMENTS + MACRO
 # ======================================================
 import pandas as pd
+import os
 
-# 1. LOAD THE DATASETS
-# df_assets: Your prior 'MASTER_ASSET_AND_ANNOUNCEMENTS.csv'
-# df_macro: Your 'MASTER_FEATURE_DATASET.csv' (Deltas + Dummies)
+print("--- FINAL INTEGRATION: CONTEMPORANEOUS ALIGNMENT ---")
 
-df_assets = pd.read_csv('MASTER_ASSET_AND_ANNOUNCEMENTS.csv')
-df_assets['Date'] = pd.to_datetime(df_assets['Date'], utc=True)
+# 1. LOAD DATASETS
+asset_file = 'MASTER_ASSET_AND_ANNOUNCEMENTS.csv'
+macro_file = 'MASTER_FEATURE_DATASET.csv'
 
-df_macro = pd.read_csv('MASTER_FEATURE_DATASET.csv')
-df_macro['t'] = pd.to_datetime(df_macro['t'], utc=True)
-df_macro.rename(columns={'t': 'Date'}, inplace=True)
+if not os.path.exists(asset_file) or not os.path.exists(macro_file):
+    print("❌ ERROR: Files missing. Check your directory.")
+else:
+    # Load S&P 500 / Asset Data
+    df_assets = pd.read_csv(asset_file)
+    df_assets['Date'] = pd.to_datetime(df_assets['Date'], utc=True)
 
-# 2. THE LAG (THE "ANTI-CHEAT" CHECK)
-# We shift only the macro columns. 
-# This aligns the Macro-Change from 13:00 with the Price-Target of 14:00.
-macro_cols = [c for c in df_macro.columns if c != 'Date']
-df_macro[macro_cols] = df_macro[macro_cols].shift(1)
+    # Load Macro Feature Data
+    df_macro = pd.read_csv(macro_file)
+    df_macro['t'] = pd.to_datetime(df_macro['t'], utc=True)
+    df_macro.rename(columns={'t': 'Date'}, inplace=True)
 
-# 3. THE ULTIMATE MERGE
-# We use 'left' to ensure we never lose asset price rows
-df_final_cleaned = pd.merge(df_assets, df_macro, on='Date', how='left')
+    # 2. RENAME FOR CLARITY
+    # Standardizing your column names for the final output
+    rename_map = {
+        'NORMALIZED_EV': 'FED_DELTA',
+        'EXPECTED_GDP_INDEX': 'GDP_DELTA',
+        'EXPECTED_UNEMPLOYMENT_INDEX': 'UNEMPLOYMENT_DELTA',
+        'EXPECTED_INFLATION_INDEX': 'INF_YEARLY_DELTA',
+        'EXPECTED_MONTHLY_INF_INDEX': 'INF_MONTHLY_DELTA'
+    }
+    df_macro.rename(columns=rename_map, inplace=True)
 
-# 4. STRUCTURAL CLEANUP
-# Fill the Macro Dummies with 0 (if no market exists, it's not starting/ending)
-dummy_cols = [c for c in df_final_cleaned.columns if 'mkt_' in c or 'start' in c or 'end' in c]
-df_final_cleaned[dummy_cols] = df_final_cleaned[dummy_cols].fillna(0).astype(int)
+    # 3. THE MERGE (NO LAG)
+    # We join Macro onto the Asset backbone exactly as they occurred
+    df_final = pd.merge(df_assets, df_macro, on='Date', how='left')
 
-# 5. EXPORT
-output_name = 'Final_Cleaned_dataset.csv'
-df_final_cleaned.to_csv(output_name, index=False)
+    # 4. DUMMY CLEANUP
+    # Ensuring the Start/End flags are binary (1 or 0) and not NaN
+    dummy_cols = [c for c in df_final.columns if any(x in c.lower() for x in ['start', 'end', 'mkt_'])]
+    df_final[dummy_cols] = df_final[dummy_cols].fillna(0).astype(int)
 
-print(f"🏁 DONE: '{output_name}' is ready.")
-print("Note: Macro features are lagged by 1h to simulate real-time availability.")
+    # 5. EXPORT
+    output_name = 'Final_Cleaned_Dataset_2026.csv'
+    df_final.to_csv(output_name, index=False)
+
+    print(f"\n🏁 INTEGRATION COMPLETE: {output_name}")
+    print(f"Total Database Rows: {len(df_final)}")
+    print("-" * 30)
+    print("Note: No lag applied. Macro and Assets are aligned to the same hour.")
+# %%
+
+# %%
+import pandas as pd
+
+# 1. Load the dataset
+df = pd.read_csv('Final_Cleaned_Dataset_2026.csv')
+df['Date'] = pd.to_datetime(df['Date'])
+df = df.sort_values('Date').reset_index(drop=True)
+
+# The 5 features we need to clean
+poly_features = [
+    'FED_DELTA', 'GDP_DELTA', 'UNEMPLOYMENT_DELTA', 
+    'INF_YEARLY_DELTA', 'INF_MONTHLY_DELTA'
+]
+
+# ---------------------------------------------------------
+# STEP 1: Trim the dataset so we only start when all 5 markets exist
+# ---------------------------------------------------------
+# Find the first row where each feature has real data
+first_valid_indices = [df[feat].first_valid_index() for feat in poly_features]
+
+# Find the "latest" starting point among all 5
+global_start_index = max(first_valid_indices)
+
+# Drop all the early rows before all markets were live
+df_trimmed = df.iloc[global_start_index:].reset_index(drop=True)
+
+# ---------------------------------------------------------
+# STEP 2: Create Dummies and Fill missing DELTAs with 0
+# ---------------------------------------------------------
+for feat in poly_features:
+    # Create the dummy: put a 1 if the data is missing (NaN), otherwise 0
+    dummy_name = f"{feat}_is_missing"
+    df_trimmed[dummy_name] = df_trimmed[feat].isna().astype(int)
+    
+    # Now that the dummy is made, fill the actual NaN with 0
+    df_trimmed[feat] = df_trimmed[feat].fillna(0)
+
+# ---------------------------------------------------------
+# STEP 3: Save the file
+# ---------------------------------------------------------
+output_file = 'FEATURES_PREPARED.csv'
+df_trimmed.to_csv(output_file, index=False)
+
+print("Features cleaned and saved!")
 # %%
