@@ -3,7 +3,7 @@ Phase 1: Descriptive Statistics & Unconditional Correlation Analysis
 Run this in Google Colab with FEATURES_PREPARED.csv uploaded to the file browser.
 """
 
-# ── Cell 1: Setup ───────────────────────────────────────────────────────────
+# 1: Setup ───────────────────────────────────────────────────────────
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -25,7 +25,7 @@ plt.rcParams.update({
     'axes.titlesize': 12, 'axes.titleweight': 'bold', 'figure.dpi': 150,
 })
 
-# ── Cell 2: Load Data ──────────────────────────────────────────────────────
+#  2: Load Data ──────────────────────────────────────────────────────
 # Adjust this path if your CSV is in a different location
 df = pd.read_csv('FEATURES_PREPARED.csv')
 df['Date'] = pd.to_datetime(df['Date'])
@@ -57,7 +57,7 @@ print(f"Period:  {df['Date'].min()} to {df['Date'].max()}")
 print(f"Columns: {len(df.columns)}")
 
 
-# ── Cell 3: Step 1 — Summary Statistics ────────────────────────────────────
+#  3: Step 1 — Summary Statistics ────────────────────────────────────
 print("=" * 60)
 print("STEP 1: SUMMARY STATISTICS")
 print("=" * 60)
@@ -85,7 +85,7 @@ summary.to_csv('outputs/phase1_summary_statistics.csv', index=False)
 print(summary.to_string(index=False))
 
 
-# ── Cell 4: Step 2 — Missingness Heatmap ──────────────────────────────────
+#  4: Step 2 — Missingness Heatmap ──────────────────────────────────
 print("\n" + "=" * 60)
 print("STEP 2: MISSINGNESS HEATMAP")
 print("=" * 60)
@@ -139,7 +139,7 @@ plt.savefig('outputs/phase1_missingness_heatmap.png', bbox_inches='tight')
 plt.show()
 
 
-# ── Cell 5: Step 3 — Time Series Plots ────────────────────────────────────
+#  5: Step 3 — Time Series Plots ────────────────────────────────────
 print("\n" + "=" * 60)
 print("STEP 3: TIME SERIES")
 print("=" * 60)
@@ -181,7 +181,7 @@ plt.savefig('outputs/phase1_timeseries.png', bbox_inches='tight')
 plt.show()
 
 
-# ── Cell 6: Step 4 — Distribution Plots ───────────────────────────────────
+# 6: Step 4 — Distribution Plots ───────────────────────────────────
 print("\n" + "=" * 60)
 print("STEP 4: DISTRIBUTIONS")
 print("=" * 60)
@@ -232,7 +232,7 @@ plt.savefig('outputs/phase1_distributions.png', bbox_inches='tight')
 plt.show()
 
 
-# ── Cell 7: Step 5 — Correlation Analysis ─────────────────────────────────
+#  7: Step 5 — Correlation Analysis ─────────────────────────────────
 print("\n" + "=" * 60)
 print("STEP 5: CORRELATION ANALYSIS")
 print("=" * 60)
@@ -313,7 +313,7 @@ for _, row in lagged[lagged['significant']].iterrows():
     print(f"  {SIGNAL_LABELS[row['signal']]:20s} → {ASSET_LABELS[row['asset']]:10s}: r={row['r']:+.4f} (p={row['p']:.4f})")
 
 
-# ── Cell 8: Step 6 — Spearman vs Pearson ──────────────────────────────────
+# 8: Step 6 — Spearman vs Pearson ──────────────────────────────────
 print("\n" + "=" * 60)
 print("STEP 6: SPEARMAN vs PEARSON (NON-LINEARITY TEST)")
 print("=" * 60)
@@ -359,7 +359,7 @@ plt.savefig('outputs/phase1_spearman_vs_pearson.png', bbox_inches='tight')
 plt.show()
 
 
-# ── Cell 9: Step 7 — Quintile Analysis ────────────────────────────────────
+#  9: Step 7 — Quintile Analysis ────────────────────────────────────
 print("\n" + "=" * 60)
 print("STEP 7: QUINTILE ANALYSIS")
 print("=" * 60)
@@ -417,7 +417,7 @@ plt.savefig('outputs/phase1_quintile_analysis.png', bbox_inches='tight')
 plt.show()
 
 
-# ── Cell 10: Step 8 — Full Correlation Summary Table ──────────────────────
+#  10: Step 8 — Full Correlation Summary Table ──────────────────────
 print("\n" + "=" * 60)
 print("STEP 8: CORRELATION SUMMARY TABLE")
 print("=" * 60)
@@ -453,7 +453,7 @@ corr_summary.to_csv('outputs/phase1_correlation_summary.csv', index=False)
 print("Saved: outputs/phase1_correlation_summary.csv")
 
 
-# ── Cell 11: Key Findings ─────────────────────────────────────────────────
+# 11: Key Findings ─────────────────────────────────────────────────
 print("\n" + "=" * 60)
 print("KEY FINDINGS FOR THESIS")
 print("=" * 60)
