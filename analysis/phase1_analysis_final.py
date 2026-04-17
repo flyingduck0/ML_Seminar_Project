@@ -22,7 +22,7 @@ os.makedirs('outputs', exist_ok=True)
 # LOAD THE DATA
 # =============================================
  
-# Read in the cleaned dataset that Adrian prepared
+# Read in the cleaned dataset
 df = pd.read_csv('FEATURES_PREPARED.csv')
  
 # Convert the Date column from a string to a proper datetime object
