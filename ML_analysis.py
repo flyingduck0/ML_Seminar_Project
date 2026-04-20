@@ -32,7 +32,7 @@ warnings.filterwarnings("ignore")
 # CONFIGURATION
 # ─────────────────────────────────────────────────────────────────────────────
 
-DATA_PATH   = "FEATURES_PREPARED.csv"
+DATA_PATH   = "Final_Pipeline_Data.csv"
 RESULTS_DIR = "results"
 ROLLING_W   = 20
 SHOCK_SIGMA = 2.0
