@@ -1435,6 +1435,7 @@ else:
 # %%
 
 # %%
+# %%
 # ==========================================
 # PHASE : Asset Data Inclusion
 # ==========================================
@@ -1442,7 +1443,7 @@ import os
 import json
 import warnings
 from datetime import datetime, timezone
-
+import time
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -1565,6 +1566,8 @@ def download_hourly_series(ticker, start_ts, end_ts, interval="1h"):
             if not s.empty:
                 s = s[(s.index >= chunk_start) & (s.index <= chunk_end)]
                 pieces.append(s)
+
+            time.sleep(random.uniform(2,5))
 
         except Exception as e:
             print(f"Download failed for {ticker} | {chunk_start} to {chunk_end}: {e}")
