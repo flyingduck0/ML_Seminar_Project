@@ -57,7 +57,7 @@ Below is a breakdown of every major file in this repository and the specific fun
 
 ### `index.html`
 * **Function:** The User Interface.
-* **Description:** A static frontend dashboard built with HTML, CSS, and Vanilla JavaScript. Instead of relying on a Python web framework, it uses `PapaParse` to read the output CSVs directly from the repository. It dynamically generates the interface, including live signal trackers, interactive feature-importance bars, and event-study heatmaps. 
+* **Description:** Description: A static frontend dashboard built with HTML, CSS, and Vanilla JavaScript. Instead of relying on a Python web framework, it uses PapaParse to read the output CSVs directly from the repository. It dynamically generates the interface, including live signal trackers, a transmission lag heatmap, interactive feature-importance bars, and event-study activity ratios, among other things.
 
 ### `results/` (Directory)
 * **Function:** The Database.
