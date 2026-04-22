@@ -12,7 +12,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: Testing_pipeline 
+          ref: main
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -30,7 +30,7 @@ jobs:
       - name: Step 2 - Run ML Analysis
         run: python MLanalysis_final.py
 
-      - name: Commit and Push changes to Testing Branch
+      - name: Commit and Push changes to main Branch
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -40,4 +40,4 @@ jobs:
           git add results/
           
           git commit -m "Automated daily update: Data and ML results" || echo "No changes to commit"
-          git push origin Testing_pipeline
+          git push origin main
