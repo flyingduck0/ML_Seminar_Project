@@ -1,9 +1,15 @@
 name: Daily Market Data Update
 
 on:
+  push:
+    branches: [ main ]  # This makes it run EVERY time you upload a file
   schedule:
-    - cron: '10 22 * * *'
+    - cron: '20 22 * * *' # 00:10 NL Time
   workflow_dispatch:
+
+# REQUIRED: This gives the bot permission to push the CSVs back to your repo
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -30,14 +36,15 @@ jobs:
       - name: Step 2 - Run ML Analysis
         run: python MLanalysis_final.py
 
-      - name: Commit and Push changes to main Branch
+      - name: Commit and Push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Only stage the two specific output targets
+          # Stage your specific output files
           git add Final_Pipeline_Data.csv
           git add results/
           
+          # Only commit if there are actually changes to the data
           git commit -m "Automated daily update: Data and ML results" || echo "No changes to commit"
           git push origin main
