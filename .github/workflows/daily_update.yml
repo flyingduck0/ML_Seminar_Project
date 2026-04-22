@@ -10,20 +10,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # Updated to v4 to remove Node.js warning
         with:
-          # Explicitly targets your testing branch
           ref: Testing_pipeline 
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # Updated to v5 to remove Node.js warning
         with:
           python-version: '3.10'
 
       - name: Install dependencies
+        # This list now contains EVERY library explicitly imported in both of your Python scripts
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy yfinance requests pytz pyarrow lightgbm scikit-learn statsmodels scipy
+          pip install pandas numpy requests matplotlib yfinance pytz scipy statsmodels lightgbm pyarrow scikit-learn
 
       - name: Step 1 - Run Main Pipeline
         run: python Pipeline_finished_not_cleanedup.py
@@ -36,11 +36,12 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Only stage the specific files
+          # Stage specific files
           git add Final_Pipeline_Data.csv
           git add results/
           
-          git commit -m "Automated daily update: Testing branch" || echo "No changes to commit"
+          # If the pipeline also generates other files you want to track (like the Announcement data), add them here:
+          # git add MASTER_ASSET_AND_ANNOUNCEMENTS.csv
           
-          # Explicitly pushes back to the correct testing branch
+          git commit -m "Automated daily update: Testing branch" || echo "No changes to commit"
           git push origin Testing_pipeline
