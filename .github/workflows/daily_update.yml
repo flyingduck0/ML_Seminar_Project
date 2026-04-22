@@ -25,7 +25,7 @@ jobs:
           pip install pandas numpy requests matplotlib yfinance pytz scipy statsmodels lightgbm pyarrow scikit-learn py_clob_client beautifulsoup4 lxml html5lib
 
       - name: Step 1 - Run Main Pipeline
-        run: python Pipeline_finished_not_cleanedup.py
+        run: python Pipeline_finished.py
 
       - name: Step 2 - Run ML Analysis
         run: python MLanalysis_final.py
