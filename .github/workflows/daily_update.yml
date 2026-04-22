@@ -2,9 +2,8 @@ name: Daily Market Data Update
 
 on:
   schedule:
-    # This runs at 00:00 UTC every day
     - cron: '0 0 * * *'
-  workflow_dispatch: # Allows you to run it manually for testing
+  workflow_dispatch:
 
 jobs:
   build:
@@ -13,7 +12,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          ref: main # Explicitly forces the action to use the main branch
+          # Explicitly targets your testing branch
+          ref: Testing_pipeline 
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -26,23 +26,21 @@ jobs:
           pip install pandas numpy yfinance requests pytz pyarrow lightgbm scikit-learn statsmodels scipy
 
       - name: Step 1 - Run Main Pipeline
-        # Refreshes the master dataset: Final_Pipeline_Data.csv
         run: python Pipeline_finished_not_cleanedup.py
 
       - name: Step 2 - Run ML Analysis
-        # Reads the new dataset and outputs files to the ./results/ folder
         run: python MLanalysis_final.py
 
-      - name: Commit and Push changes to Main
+      - name: Commit and Push changes to Testing Branch
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Only stage the specific files we want to update
+          # Only stage the specific files
           git add Final_Pipeline_Data.csv
           git add results/
           
-          git commit -m "Automated daily update: Master dataset and ML results" || echo "No changes to commit"
+          git commit -m "Automated daily update: Testing branch" || echo "No changes to commit"
           
-          # Explicitly push back to the main branch
-          git push origin main
+          # Explicitly pushes back to the correct testing branch
+          git push origin Testing_pipeline
