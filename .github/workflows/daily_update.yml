@@ -2,7 +2,7 @@ name: Daily Market Data Update
 
 on:
   schedule:
-    - cron: '37 22 * * *'  # Runs automatically at 00:00 UTC
+    - cron: '00 00 * * *'  # Runs automatically at 00:00 UTC
   workflow_dispatch:      # Allows you to run it manually with a button
 
 permissions:
