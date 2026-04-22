@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]  # This makes it run EVERY time you upload a file
   schedule:
-    - cron: '18 22 * * *' # 00:10 NL Time
+    - cron: '20 22 * * *' # 00:10 NL Time
   workflow_dispatch:
 
 # REQUIRED: This gives the bot permission to push the CSVs back to your repo
