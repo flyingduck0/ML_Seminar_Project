@@ -1,0 +1,1655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POLYMARKET ALPHA TERMINAL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700;9..144,900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+
+<style>
+  :root {
+    --bg:        #0a0e14;
+    --bg-card:   #10151e;
+    --bg-card-2: #141a25;
+    --border:    #1f2937;
+    --border-hi: #2d3748;
+    --text:      #e2e8f0;
+    --text-dim:  #64748b;
+    --text-low:  #475569;
+    --accent:    #f59e0b;
+    --accent-2:  #38bdf8;
+    --green:     #10b981;
+    --red:       #ef4444;
+    --yellow:    #eab308;
+    --serif:     "Fraunces", Georgia, serif;
+    --mono:      "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+    overflow-x: hidden;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(ellipse at top left, rgba(245, 158, 11, 0.04) 0%, transparent 50%),
+      radial-gradient(ellipse at bottom right, rgba(56, 189, 248, 0.04) 0%, transparent 50%);
+  }
+
+  /* HEADER */
+  .header {
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(180deg, rgba(16, 21, 30, 0.9), transparent);
+    position: sticky; top: 0; z-index: 100;
+    backdrop-filter: blur(12px);
+  }
+  .brand { display: flex; align-items: baseline; gap: 16px; }
+  .brand-logo { font-family: var(--serif); font-size: 26px; font-weight: 500; letter-spacing: -0.02em; }
+  .brand-logo em { font-style: italic; color: var(--accent); font-weight: 400; }
+  .brand-tag {
+    font-size: 10px; letter-spacing: 0.25em; color: var(--text-dim);
+    text-transform: uppercase; padding: 3px 8px; border: 1px solid var(--border-hi);
+  }
+  .header-meta { display: flex; gap: 32px; align-items: center; font-size: 11px; }
+  .meta-item { display: flex; flex-direction: column; gap: 2px; }
+  .meta-label {
+    color: var(--text-low); letter-spacing: 0.1em;
+    text-transform: uppercase; font-size: 9px;
+  }
+  .meta-value { color: var(--text); font-weight: 500; }
+  .pulse {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green); margin-right: 6px; animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* MAIN */
+  .main { padding: 32px; max-width: 1800px; margin: 0 auto; }
+  .section { margin-bottom: 48px; }
+  .section-header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 12px; padding-bottom: 12px;
+    border-bottom: 1px solid var(--border); gap: 16px; flex-wrap: wrap;
+  }
+  .section-title {
+    font-family: var(--serif); font-size: 22px; font-weight: 400;
+    letter-spacing: -0.01em; flex-shrink: 0;
+  }
+  .section-title em { font-style: italic; color: var(--accent); }
+  .section-meta { display: flex; align-items: center; gap: 14px; }
+  .section-num {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em;
+    color: var(--text-low); text-transform: uppercase; white-space: nowrap;
+  }
+
+  /* EXPLAIN TOGGLE */
+  .explain-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em;
+    text-transform: uppercase; color: var(--accent);
+    background: transparent; border: 1px solid var(--accent);
+    padding: 5px 10px; cursor: pointer; transition: all 0.2s;
+  }
+  .explain-toggle:hover { background: var(--accent); color: var(--bg); }
+  .explain-toggle .chev { display: inline-block; transition: transform 0.25s; font-size: 11px; }
+  .explain-toggle.open .chev { transform: rotate(180deg); }
+  .explain-panel {
+    max-height: 0; overflow: hidden;
+    transition: max-height 0.45s ease-out, margin 0.3s, opacity 0.3s;
+    background: linear-gradient(135deg, var(--bg-card) 0%, rgba(245, 158, 11, 0.03) 100%);
+    border-left: 3px solid var(--accent); margin-bottom: 0; opacity: 0;
+  }
+  .explain-panel.open { max-height: 1500px; margin-bottom: 24px; opacity: 1; }
+  .explain-inner { padding: 24px 28px; font-size: 12.5px; line-height: 1.75; color: var(--text); }
+  .explain-inner h4 {
+    font-family: var(--serif); font-size: 15px; font-weight: 500;
+    color: var(--accent); margin-top: 16px; margin-bottom: 8px;
+  }
+  .explain-inner h4:first-child { margin-top: 0; }
+  .explain-inner p { margin-bottom: 10px; }
+  .explain-inner strong { color: var(--accent); font-weight: 600; }
+  .explain-inner code {
+    font-family: var(--mono); font-size: 11px; background: var(--bg-card-2);
+    padding: 1px 6px; border-radius: 2px; color: var(--accent-2);
+  }
+  .explain-inner ul { margin: 8px 0 12px 20px; }
+  .explain-inner li { margin-bottom: 4px; }
+  .explain-note {
+    display: block; margin-top: 16px; padding: 12px 14px;
+    border: 1px dashed var(--border-hi); font-size: 11.5px;
+    color: var(--text-dim); font-style: italic;
+  }
+
+  /* SIGNALS */
+  .signals-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 48px; }
+  .signal-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-left: 3px solid var(--text-low);
+    padding: 18px 20px; position: relative; cursor: pointer; transition: all 0.25s;
+  }
+  .signal-card:hover { border-color: var(--border-hi); transform: translateY(-1px); }
+  .signal-card.shock {
+    border-left-color: var(--accent);
+    background: linear-gradient(135deg, var(--bg-card) 0%, rgba(245, 158, 11, 0.04) 100%);
+  }
+  .signal-card.shock .signal-value { color: var(--accent); }
+  .signal-card.missing { opacity: 0.55; border-left-color: var(--red); }
+  .signal-name {
+    font-size: 10px; letter-spacing: 0.18em; color: var(--text-dim);
+    text-transform: uppercase; font-weight: 500;
+  }
+  .signal-value {
+    font-family: var(--serif); font-size: 32px; font-weight: 400;
+    letter-spacing: -0.02em; margin-top: 4px; line-height: 1;
+  }
+  .signal-unit { font-size: 10px; color: var(--text-low); margin-left: 4px; }
+  .signal-meta {
+    display: flex; justify-content: space-between; margin-top: 14px;
+    font-size: 10px; color: var(--text-dim);
+  }
+  .signal-meta span:last-child { color: var(--text); font-weight: 500; }
+  .signal-status {
+    position: absolute; top: 18px; right: 18px;
+    font-size: 9px; letter-spacing: 0.15em;
+    padding: 2px 6px; text-transform: uppercase;
+  }
+  .signal-status.shock { background: var(--accent); color: var(--bg); font-weight: 700; }
+  .signal-status.calm { color: var(--text-low); border: 1px solid var(--border-hi); }
+  .signal-status.missing { color: var(--red); border: 1px solid var(--red); }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(10, 14, 20, 0.85); backdrop-filter: blur(8px);
+    z-index: 200; display: none; align-items: center; justify-content: center; padding: 32px;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: var(--bg-card); border: 1px solid var(--border-hi);
+    border-left: 4px solid var(--accent);
+    max-width: 720px; width: 100%;
+    padding: 32px; position: relative; max-height: 90vh; overflow-y: auto;
+  }
+  .modal-close {
+    position: absolute; top: 18px; right: 18px;
+    background: transparent; border: 1px solid var(--border-hi);
+    color: var(--text-dim); font-size: 14px; cursor: pointer;
+    width: 28px; height: 28px; line-height: 1; transition: all 0.15s;
+  }
+  .modal-close:hover { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  .modal-title {
+    font-family: var(--serif); font-size: 22px; font-weight: 500; margin-bottom: 6px;
+  }
+  .modal-subtitle {
+    font-size: 10px; letter-spacing: 0.15em;
+    color: var(--text-dim); text-transform: uppercase; margin-bottom: 20px;
+  }
+  .modal-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 16px; }
+  .modal-stat {
+    background: var(--bg-card-2); padding: 14px 16px;
+    border-left: 2px solid var(--border-hi);
+  }
+  .modal-stat .label {
+    font-size: 9px; letter-spacing: 0.15em;
+    color: var(--text-dim); text-transform: uppercase;
+  }
+  .modal-stat .value {
+    font-family: var(--serif); font-size: 22px; font-weight: 500; margin-top: 4px;
+  }
+  .modal-body {
+    font-size: 12.5px; line-height: 1.7;
+    margin-top: 16px; padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .modal-body strong { color: var(--accent); }
+  .modal-body p { margin-bottom: 10px; }
+
+  /* TRADE PANEL */
+  .trade-panel {
+    background: linear-gradient(135deg, var(--bg-card) 0%, rgba(245, 158, 11, 0.05) 100%);
+    border: 1px solid var(--accent); border-left: 4px solid var(--accent);
+    padding: 28px 32px; margin-bottom: 32px; display: none;
+  }
+  .trade-panel.active { display: block; }
+  .trade-panel-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .trade-panel-flag {
+    background: var(--accent); color: var(--bg); font-weight: 700;
+    font-size: 10px; letter-spacing: 0.2em; padding: 4px 10px;
+    animation: pulse 2s infinite;
+  }
+  .trade-panel-title { font-family: var(--serif); font-size: 24px; font-weight: 500; }
+  .trade-panel-title em { color: var(--accent); font-style: italic; }
+  .trade-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 24px; margin-top: 20px;
+  }
+  .trade-stat .label {
+    font-size: 10px; letter-spacing: 0.15em;
+    color: var(--text-dim); text-transform: uppercase;
+  }
+  .trade-stat .value {
+    font-family: var(--serif); font-size: 22px;
+    font-weight: 500; margin-top: 4px;
+  }
+  .trade-stat .value em { color: var(--accent); font-style: italic; }
+  .trade-stat .sub {
+    font-size: 10px; color: var(--text-dim);
+    margin-top: 4px; display: block;
+  }
+
+  /* ALPHA TABLE */
+  .alpha-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; }
+  .alpha-table-wrap {
+    background: var(--bg-card); border: 1px solid var(--border); overflow: hidden;
+  }
+  .alpha-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .alpha-table th {
+    background: var(--bg-card-2); padding: 14px 16px; text-align: left;
+    font-size: 10px; letter-spacing: 0.15em; color: var(--text-dim);
+    text-transform: uppercase; font-weight: 500;
+    border-bottom: 1px solid var(--border);
+  }
+  .alpha-table th.num { text-align: right; }
+  .alpha-table td { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .alpha-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .alpha-table tbody tr { transition: background 0.15s; cursor: pointer; }
+  .alpha-table tbody tr:hover { background: var(--bg-card-2); }
+  .alpha-table tbody tr:last-child td { border-bottom: none; }
+  .pm-name { font-size: 11px; color: var(--text-dim); letter-spacing: 0.05em; }
+  .asset-name { font-weight: 600; color: var(--text); margin-left: 8px; }
+  .sharpe-cell { font-family: var(--serif); font-size: 16px; font-weight: 500; }
+  .sharpe-pos { color: var(--green); }
+  .sharpe-neg { color: var(--red); }
+  .sharpe-mid { color: var(--yellow); }
+  .tier-badge {
+    display: inline-block; font-size: 9px; letter-spacing: 0.15em;
+    padding: 2px 6px; text-transform: uppercase; font-weight: 600;
+  }
+  .tier-prime { background: rgba(16, 185, 129, 0.15); color: var(--green); border: 1px solid rgba(16, 185, 129, 0.3); }
+  .tier-watch { background: rgba(234, 179, 8, 0.12); color: var(--yellow); border: 1px solid rgba(234, 179, 8, 0.3); }
+  .tier-avoid { background: rgba(239, 68, 68, 0.12); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.3); }
+  .insight-panel {
+    background: var(--bg-card); border: 1px solid var(--border);
+    padding: 24px; position: relative; overflow: hidden;
+  }
+  .insight-panel::before {
+    content: ''; position: absolute; top: 0; left: 0;
+    width: 2px; height: 100%;
+    background: linear-gradient(180deg, var(--accent), transparent);
+  }
+  .insight-title {
+    font-family: var(--serif); font-size: 18px; font-weight: 400;
+    font-style: italic; color: var(--accent); margin-bottom: 12px;
+  }
+  .insight-body { font-size: 12px; line-height: 1.7; }
+  .insight-body strong { color: var(--accent); font-weight: 600; }
+  .insight-divider { margin: 14px 0; border-top: 1px dashed var(--border-hi); }
+
+  /* LAG GRID */
+  .lag-grid {
+    display: grid; grid-template-columns: 160px repeat(6, 1fr);
+    gap: 2px; background: var(--border); padding: 1px;
+  }
+  .lag-grid-cell {
+    background: var(--bg-card); padding: 14px 10px;
+    text-align: center; font-size: 11px; position: relative;
+    font-variant-numeric: tabular-nums; transition: transform 0.15s;
+  }
+  .lag-grid-cell[data-cell]:hover { transform: scale(1.04); z-index: 2; }
+  .lag-grid-header {
+    background: var(--bg-card-2); color: var(--text-dim);
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 10px;
+  }
+  .lag-grid-pair {
+    background: var(--bg-card-2); text-align: left; padding: 14px 12px;
+    font-size: 10px; color: var(--text-dim); letter-spacing: 0.03em;
+  }
+  .lag-grid-pair strong { color: var(--text); font-weight: 500; }
+  .lag-active { background: var(--accent); color: var(--bg); font-weight: 700; cursor: pointer; }
+  .lag-active .p-val { color: rgba(10, 14, 20, 0.8); font-weight: 500; }
+  .lag-active-strong { background: rgba(245, 158, 11, 0.25); color: var(--accent); border: 1px solid var(--accent); cursor: pointer; }
+  .lag-active-weak { background: rgba(245, 158, 11, 0.08); color: var(--accent); cursor: pointer; }
+  .p-val { font-size: 9px; color: var(--text-low); margin-top: 2px; }
+
+  /* LIGHTGBM */
+  .lgbm-wrap { display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; }
+  .lgbm-table-wrap { background: var(--bg-card); border: 1px solid var(--border); overflow: hidden; }
+  .lgbm-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .lgbm-table th {
+    background: var(--bg-card-2); padding: 12px 14px; text-align: left;
+    font-size: 10px; letter-spacing: 0.15em; color: var(--text-dim);
+    text-transform: uppercase; font-weight: 500;
+    border-bottom: 1px solid var(--border);
+  }
+  .lgbm-table th.num { text-align: right; }
+  .lgbm-table td {
+    padding: 12px 14px; border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  .lgbm-table td.num { text-align: right; }
+  .lgbm-table tbody tr { transition: background 0.15s; cursor: pointer; }
+  .lgbm-table tbody tr:hover { background: var(--bg-card-2); }
+  .lgbm-table tbody tr:last-child td { border-bottom: none; }
+  .da-num { font-family: var(--serif); font-size: 14px; font-weight: 500; }
+  .da-pos { color: var(--green); }
+  .da-neg { color: var(--red); }
+  .verdict {
+    display: inline-block; font-size: 9px; letter-spacing: 0.15em;
+    padding: 2px 6px; text-transform: uppercase; font-weight: 600;
+  }
+  .verdict-strong { background: rgba(16, 185, 129, 0.15); color: var(--green); border: 1px solid rgba(16, 185, 129, 0.3); }
+  .verdict-weak { background: rgba(234, 179, 8, 0.12); color: var(--yellow); border: 1px solid rgba(234, 179, 8, 0.3); }
+  .verdict-flat { background: rgba(100, 116, 139, 0.12); color: var(--text-dim); border: 1px solid var(--border-hi); }
+  .verdict-bad { background: rgba(239, 68, 68, 0.12); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.3); }
+
+  /* FEATURE IMPORTANCE */
+  .fimp-wrap { background: var(--bg-card); border: 1px solid var(--border); padding: 20px; }
+  .fimp-title { font-family: var(--serif); font-size: 16px; font-weight: 500; margin-bottom: 4px; }
+  .fimp-title em { font-style: italic; color: var(--accent); }
+  .fimp-subtitle {
+    font-size: 10px; letter-spacing: 0.12em; color: var(--text-dim);
+    text-transform: uppercase; margin-bottom: 16px;
+  }
+  .fimp-selector { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+  .fimp-btn {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; padding: 6px 10px;
+    background: var(--bg-card-2); border: 1px solid var(--border);
+    color: var(--text-dim); cursor: pointer; transition: all 0.15s;
+  }
+  .fimp-btn:hover { border-color: var(--border-hi); color: var(--text); }
+  .fimp-btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+  .fimp-bars { display: flex; flex-direction: column; gap: 10px; min-height: 180px; }
+  .fimp-row {
+    display: grid; grid-template-columns: 150px 1fr 54px;
+    gap: 10px; align-items: center; font-size: 11px;
+  }
+  .fimp-label { color: var(--text-dim); font-size: 10px; }
+  .fimp-label.pm { color: var(--accent); font-weight: 600; }
+  .fimp-label.macro { color: var(--accent-2); font-weight: 600; }
+  .fimp-bar-track { height: 14px; background: var(--bg-card-2); position: relative; overflow: hidden; }
+  .fimp-bar-fill {
+    position: absolute; top: 0; left: 0; height: 100%;
+    background: var(--text-low); transition: width 0.6s ease;
+  }
+  .fimp-bar-fill.pm { background: var(--accent); }
+  .fimp-bar-fill.macro { background: var(--accent-2); }
+  .fimp-value {
+    text-align: right; color: var(--text-dim);
+    font-variant-numeric: tabular-nums; font-size: 10px;
+  }
+  .fimp-legend {
+    display: flex; gap: 16px; font-size: 10px; color: var(--text-dim);
+    margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .fimp-legend-item { display: flex; align-items: center; gap: 6px; }
+  .fimp-dot { width: 10px; height: 10px; }
+
+  /* EVENTS */
+  .events-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .event-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    padding: 18px; transition: border-color 0.2s; cursor: pointer;
+  }
+  .event-card:hover { border-color: var(--border-hi); }
+  .event-name { font-family: var(--serif); font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+  .event-pm {
+    font-size: 10px; letter-spacing: 0.1em; color: var(--text-dim);
+    text-transform: uppercase; margin-bottom: 14px;
+  }
+  .ratio-bar-wrap { margin: 14px 0 8px; }
+  .ratio-bar { height: 6px; background: var(--bg-card-2); overflow: hidden; position: relative; }
+  .ratio-fill {
+    height: 100%; background: linear-gradient(90deg, var(--accent-2), var(--accent));
+    transition: width 1s ease;
+  }
+  .ratio-bar-labels {
+    display: flex; justify-content: space-between;
+    font-size: 9px; color: var(--text-low); margin-top: 4px; letter-spacing: 0.05em;
+  }
+  .event-ratio { font-family: var(--serif); font-size: 26px; font-weight: 400; margin-top: 8px; }
+  .event-ratio-label {
+    font-size: 10px; color: var(--text-dim);
+    letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .event-details {
+    display: flex; justify-content: space-between;
+    margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 10px; color: var(--text-dim);
+  }
+  .event-details span:last-child { color: var(--text); font-weight: 500; }
+
+  /* DLM */
+  .dlm-panel { background: var(--bg-card); border: 1px solid var(--border); padding: 20px; }
+  .dlm-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  .dlm-item {
+    display: grid; grid-template-columns: 1.2fr 60px 1fr 100px 80px;
+    gap: 14px; padding: 10px 14px;
+    background: var(--bg-card-2); border-left: 2px solid var(--accent-2);
+    align-items: center; font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .dlm-pair { font-weight: 500; }
+  .dlm-pair small { color: var(--text-dim); font-weight: 400; }
+  .dlm-lag { font-family: var(--serif); font-size: 18px; color: var(--accent-2); }
+  .dlm-viz { display: flex; gap: 2px; align-items: flex-end; height: 20px; }
+  .dlm-viz-bar { flex: 1; background: var(--border-hi); border-radius: 1px 1px 0 0; }
+  .dlm-viz-bar.active { background: var(--accent-2); }
+  .dlm-beta { text-align: right; color: var(--text-dim); }
+  .dlm-p { text-align: right; font-size: 10px; color: var(--text-low); }
+
+  /* OLS */
+  .ols-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .ols-asset {
+    background: var(--bg-card); border: 1px solid var(--border);
+    padding: 16px; text-align: center;
+  }
+  .ols-asset-name { font-family: var(--serif); font-size: 18px; font-weight: 500; margin-bottom: 2px; }
+  .ols-asset-type {
+    font-size: 9px; letter-spacing: 0.15em;
+    color: var(--text-low); text-transform: uppercase; margin-bottom: 12px;
+  }
+  .ols-r2-container { display: flex; flex-direction: column; gap: 4px; margin: 12px 0; }
+  .ols-r2-label {
+    font-size: 9px; color: var(--text-dim);
+    letter-spacing: 0.1em; text-transform: uppercase;
+    display: flex; justify-content: space-between;
+  }
+  .ols-r2-bar { height: 3px; background: var(--bg-card-2); position: relative; overflow: hidden; }
+  .ols-r2-fill { height: 100%; background: var(--accent); }
+  .ols-delta { font-family: var(--serif); font-size: 22px; font-weight: 400; color: var(--accent); margin-top: 8px; }
+  .ols-delta-label { font-size: 9px; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; }
+  .ols-fp {
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 10px; color: var(--text-dim);
+  }
+  .ols-fp strong { color: var(--text); font-weight: 500; }
+  .ols-fp.sig strong { color: var(--green); }
+
+  /* EVENT REGRESSION TABLE */
+  .ereg-wrap { background: var(--bg-card); border: 1px solid var(--border); overflow: hidden; }
+  .ereg-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .ereg-table th {
+    background: var(--bg-card-2); padding: 10px 14px; text-align: left;
+    font-size: 9px; letter-spacing: 0.15em; color: var(--text-dim);
+    text-transform: uppercase; font-weight: 500;
+    border-bottom: 1px solid var(--border);
+  }
+  .ereg-table th.num { text-align: right; }
+  .ereg-table td {
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  .ereg-table td.num { text-align: right; }
+  .ereg-table tbody tr.sig { background: rgba(16, 185, 129, 0.04); }
+  .ereg-table tbody tr.weak { background: rgba(234, 179, 8, 0.03); }
+
+  /* FOOTER */
+  .footer {
+    padding: 32px; border-top: 1px solid var(--border);
+    text-align: center; color: var(--text-low);
+    font-size: 10px; letter-spacing: 0.1em; margin-top: 64px;
+  }
+  .footer em { font-family: var(--serif); font-style: italic; color: var(--text-dim); }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border-hi); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-low); }
+
+  .loading {
+    text-align: center; padding: 60px;
+    color: var(--text-dim); font-size: 11px;
+    letter-spacing: 0.2em; text-transform: uppercase;
+  }
+  .error-banner {
+    background: rgba(239, 68, 68, 0.08); border: 1px solid var(--red);
+    border-left: 4px solid var(--red); padding: 16px 24px;
+    margin-bottom: 24px; font-size: 12px; color: var(--text);
+  }
+  .error-banner strong { color: var(--red); }
+
+  @media (max-width: 1200px) {
+    .signals-strip, .events-grid { grid-template-columns: repeat(2, 1fr); }
+    .ols-grid { grid-template-columns: repeat(3, 1fr); }
+    .alpha-grid, .lgbm-wrap { grid-template-columns: 1fr; }
+    .lag-grid { grid-template-columns: 110px repeat(6, 1fr); font-size: 10px; }
+  }
+  @media (max-width: 768px) {
+    .header { flex-direction: column; gap: 16px; align-items: flex-start; }
+    .header-meta { gap: 16px; flex-wrap: wrap; }
+    .main { padding: 20px; }
+    .signals-strip, .events-grid, .ols-grid { grid-template-columns: 1fr; }
+    .trade-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- HEADER                                                              -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<header class="header">
+  <div class="brand">
+    <div class="brand-logo">POLYMARKET <em>alpha</em></div>
+    <div class="brand-tag">TERMINAL · V2.0</div>
+  </div>
+  <div class="header-meta">
+    <div class="meta-item">
+      <span class="meta-label">STATUS</span>
+      <span class="meta-value"><span class="pulse"></span>LIVE</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">LAST UPDATE</span>
+      <span class="meta-value" id="last-update">—</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">TOTAL TRADES</span>
+      <span class="meta-value" id="trade-count">—</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">SIG. PAIRS</span>
+      <span class="meta-value" id="sig-count">—</span>
+    </div>
+  </div>
+</header>
+
+<main class="main">
+
+  <div id="error-area"></div>
+
+  <!-- LIVE TRADE PANEL (only when shock active) -->
+  <div id="trade-panel" class="trade-panel">
+    <div class="trade-panel-header">
+      <span class="trade-panel-flag">LIVE SHOCK</span>
+      <span class="trade-panel-title">Execution <em>window open</em></span>
+    </div>
+    <p id="trade-narrative" style="color: var(--text-dim); font-size: 12px; line-height: 1.7;"></p>
+    <div class="trade-grid" id="trade-grid"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- SECTION 1 — LIVE SIGNALS                                          -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">Live <em>signals</em></h2>
+      <div class="section-meta">
+        <button class="explain-toggle" data-target="explain-1">
+          <span>What is this?</span><span class="chev">▾</span>
+        </button>
+        <span class="section-num">§ 01 · REAL-TIME STATE</span>
+      </div>
+    </div>
+    <div class="explain-panel" id="explain-1">
+      <div class="explain-inner">
+        <h4>Real-time state of the four Polymarket signals</h4>
+        <p>Each card displays the current standardised z-score of one Polymarket signal,
+          measured against its rolling 20-hour distribution. The z-score isolates how anomalous
+          the most recent move is relative to its own recent activity, regardless of the absolute
+          magnitude of the signal.</p>
+        <h4>How to read each card</h4>
+        <ul>
+          <li><strong>Z-score</strong> — number of standard deviations away from the rolling mean.
+            Anything above ±2 is flagged as a <code>SHOCK</code>, the threshold our shock-panel
+            framework uses to identify information arrival.</li>
+          <li><strong>Δ</strong> — raw signal change in the last hour.</li>
+          <li><strong>Threshold</strong> — current value of <code>μ + 2σ</code>. Any |Δ| above this
+            line triggers a shock.</li>
+          <li><strong>Status badges</strong>: <code>SHOCK</code> means information arrival is
+            currently in progress; <code>CALM</code> means quiet trading; <code>ILLIQUID</code>
+            means the contract has no recent trades and the signal is unreliable.</li>
+        </ul>
+        <h4>How to use it</h4>
+        <p>When a card flips to <code>SHOCK</code>, the live execution panel above expands with
+          the asset–horizon combinations that historically respond to that signal, with
+          recommended trade direction and holding period. <strong>Click any signal card</strong>
+          to drill down into its history.</p>
+        <span class="explain-note">Shock detection formula: <code>|ΔPM_t| &gt; μ_t + 2σ_t</code>
+          where μ and σ are rolling statistics over the previous 20 liquid hours. Missing hours
+          are NaN-masked before computing the rolling window to avoid false positives during
+          illiquid periods.</span>
+      </div>
+    </div>
+    <div class="signals-strip" id="signals-strip">
+      <div class="loading">LOADING SIGNALS…</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- SECTION 2 — TRADEABLE ALPHA                                       -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">Tradeable <em>alpha</em></h2>
+      <div class="section-meta">
+        <button class="explain-toggle" data-target="explain-2">
+          <span>What is this?</span><span class="chev">▾</span>
+        </button>
+        <span class="section-num">§ 02 · BACKTEST · SHARPE RATIOS</span>
+      </div>
+    </div>
+    <div class="explain-panel" id="explain-2">
+      <div class="explain-inner">
+        <h4>Backtest performance for every PM-asset pair</h4>
+        <p>Each row represents a strategy that opens a position whenever the relevant Polymarket
+          signal enters a shock state, takes the direction implied by the sign of the shock, holds
+          for <code>h</code> hours (the optimal lag from the shock-panel IRF), and closes the
+          position. No overlapping trades are permitted.</p>
+        <h4>Key metrics</h4>
+        <ul>
+          <li><strong>Gross SR</strong> — annualised Sharpe before transaction costs. Captures
+            the raw informational edge of the signal.</li>
+          <li><strong>Net SR</strong> — Sharpe after applying realistic round-trip costs
+            (2 bps SPY/QQQ/Oil, 1 bps BTC/Gold/SP500fut). Captures what is actually exploitable.</li>
+          <li><strong>Max DD</strong> — largest peak-to-trough drawdown on cumulative trade returns.</li>
+          <li><strong>Tier badge</strong>: <code>PRIME</code> (Net SR &gt; 0.5) — standalone alpha;
+            <code>WATCH</code> (Gross &gt; 1.0 but Net negative) — overlay candidate;
+            <code>AVOID</code> — not trade-worthy.</li>
+        </ul>
+        <h4>How to use it</h4>
+        <p>Read this table as a <strong>capital allocation guide</strong>. PRIME pairs go directly
+          into a systematic portfolio; WATCH pairs become signal amplifiers on top of existing
+          factor strategies (momentum, carry, volatility); AVOID pairs are filtered out.</p>
+        <p><strong>Click any row</strong> to see the full trade statistics, holding period, and
+          the IRF coefficient that drives the holding decision.</p>
+        <span class="explain-note">Pattern of positive Gross / negative Net is the empirical
+          signature of a Grossman-Stiglitz equilibrium: information exists in the signal, but the
+          margin available to traders is consumed by realistic frictions.</span>
+      </div>
+    </div>
+    <div class="alpha-grid">
+      <div class="alpha-table-wrap">
+        <table class="alpha-table" id="alpha-table">
+          <thead>
+            <tr>
+              <th>Pair</th>
+              <th class="num">h</th>
+              <th class="num">Trades</th>
+              <th class="num">Gross SR</th>
+              <th class="num">Net SR</th>
+              <th class="num">Max DD</th>
+              <th>Tier</th>
+            </tr>
+          </thead>
+          <tbody id="alpha-tbody">
+            <tr><td colspan="7" class="loading">LOADING…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="insight-panel">
+        <div class="insight-title">Grossman–Stiglitz frontier</div>
+        <div class="insight-body" id="alpha-insight">Loading analysis…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- SECTION 3 — TRANSMISSION LAG MAP                                  -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">Transmission <em>lag map</em></h2>
+      <div class="section-meta">
+        <button class="explain-toggle" data-target="explain-3">
+          <span>What is this?</span><span class="chev">▾</span>
+        </button>
+        <span class="section-num">§ 03 · SHOCK-PANEL IRF · h = 1–6</span>
+      </div>
+    </div>
+    <div class="explain-panel" id="explain-3">
+      <div class="explain-inner">
+        <h4>Heatmap of impulse response coefficients</h4>
+        <p>Each cell is the coefficient β from a bivariate OLS regression
+          <code>r(t+h) = α + β · ΔPM(t) + ε</code> estimated only on shock hours, with HC3
+          heteroskedasticity-robust standard errors. The p-value below each β indicates statistical
+          significance.</p>
+        <h4>Cell colour code</h4>
+        <ul>
+          <li><strong>Solid amber (filled)</strong> — optimal transmission lag for that pair, as
+            selected by the IRF. This is the holding period the backtest uses.</li>
+          <li><strong>Bordered amber (medium)</strong> — significant at p &lt; 0.05.</li>
+          <li><strong>Light amber (faint)</strong> — significant at p &lt; 0.10.</li>
+          <li><strong>Empty</strong> — no significant transmission detected.</li>
+        </ul>
+        <h4>How to use it</h4>
+        <p>Use this as an <strong>execution timing guide</strong>. When a shock fires, the heatmap
+          tells you which assets should react and how many hours to wait before unwinding the trade.
+          For example, FED→SPY transmits in 1 hour while UNEMP→SPY takes 6 hours — execution
+          timing matters.</p>
+        <p><strong>Click any highlighted cell</strong> for a full breakdown including sample size,
+          correlation, and directional t-test.</p>
+        <span class="explain-note">Following Jordà (2005), these horizon-specific coefficients
+          are estimated via direct projection rather than inverting a VAR — more robust to lag
+          misspecification in sparse panels.</span>
+      </div>
+    </div>
+    <div class="lag-grid" id="lag-grid">
+      <div class="loading" style="grid-column: span 7;">LOADING…</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- SECTION 4 — LIGHTGBM OOS PERFORMANCE                              -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">Non-linear <em>out-of-sample</em></h2>
+      <div class="section-meta">
+        <button class="explain-toggle" data-target="explain-4">
+          <span>What is this?</span><span class="chev">▾</span>
+        </button>
+        <span class="section-num">§ 04 · LIGHTGBM · DIRECTIONAL ACCURACY</span>
+      </div>
+    </div>
+    <div class="explain-panel" id="explain-4">
+      <div class="explain-inner">
+        <h4>Gradient-boosted directional forecasts</h4>
+        <p>LightGBM is trained on the shock panel using PM features
+          (<code>pm_delta</code>, <code>pm_z</code>, <code>pm_vol</code>), calendar features,
+          announcement proximity, and lagged macro conditioning variables
+          (<code>DXY_chg_L1</code>, <code>US2Y_chg_L1</code>) and target asset rolling
+          volatility. Validation uses 5-fold walk-forward expanding window.</p>
+        <h4>Metrics on the left</h4>
+        <ul>
+          <li><strong>DA LGBM</strong> — out-of-sample directional accuracy of the gradient-boosted
+            model. 50% is random; above 55% is meaningful.</li>
+          <li><strong>DA OLS</strong> — directional accuracy of a bivariate OLS using only
+            <code>pm_delta</code>, evaluated on the same walk-forward folds. The benchmark.</li>
+          <li><strong>p-binom</strong> — one-sided binomial test against a 50% random walk.
+            p &lt; 0.10 means LGBM is statistically better than chance.</li>
+          <li><strong>p-McN</strong> — McNemar test on discordant pairs. p &lt; 0.10 means LGBM
+            is statistically better than the linear OLS baseline.</li>
+          <li><strong>Verdict</strong>: <code>STRONG</code> (both tests significant);
+            <code>EDGE</code> (DA &gt; 50% with one test marginal); <code>FLAT</code> (no edge);
+            <code>BAD</code> (DA &lt; 50%).</li>
+        </ul>
+        <h4>Feature importance on the right</h4>
+        <p>Switch between PM-asset pairs to see which features drive the model. The systematic
+          dominance of <span style="color:var(--accent-2)">DXY</span> and asset volatility above
+          the raw <span style="color:var(--accent)">PM signals</span> confirms that PM-to-asset
+          pass-through is <strong>conditional on the prevailing macro regime</strong>, not
+          unconditional.</p>
+        <span class="explain-note">SPY is excluded from LightGBM because its shock panel contains
+          fewer than 50 training observations in early CV folds — insufficient for reliable model
+          fitting. SPY remains in the OLS shock-panel analysis where small samples are tractable.</span>
+      </div>
+    </div>
+    <div class="lgbm-wrap">
+      <div class="lgbm-table-wrap">
+        <table class="lgbm-table" id="lgbm-table">
+          <thead>
+            <tr>
+              <th>Pair</th>
+              <th class="num">h</th>
+              <th class="num">N OOS</th>
+              <th class="num">DA LGBM</th>
+              <th class="num">DA OLS</th>
+              <th class="num">p-binom</th>
+              <th class="num">p-McN</th>
+              <th>Verdict</th>
+            </tr>
+          </thead>
+          <tbody id="lgbm-tbody">
+            <tr><td colspan="8" class="loading">LOADING…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="fimp-wrap">
+        <div class="fimp-title">Feature <em>importance</em></div>
+        <div class="fimp-subtitle">Top 5 features per pair · avg tree splits across folds</div>
+        <div class="fimp-selector" id="fimp-selector"></div>
+        <div class="fimp-bars" id="fimp-bars">
+          <div class="loading" style="text-align: left">SELECT A PAIR…</div>
+        </div>
+        <div class="fimp-legend">
+          <div class="fimp-legend-item"><span class="fimp-dot" style="background:var(--accent)"></span>PM signal</div>
+          <div class="fimp-legend-item"><span class="fimp-dot" style="background:var(--accent-2)"></span>Macro conditioning</div>
+          <div class="fimp-legend-item"><span class="fimp-dot" style="background:var(--text-low)"></span>Calendar / volatility</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- SECTION 5 — EVENT STUDY                                           -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">Pre-event <em>anticipation</em></h2>
+      <div class="section-meta">
+        <button class="explain-toggle" data-target="explain-5">
+          <span>What is this?</span><span class="chev">▾</span>
+        </button>
+        <span class="section-num">§ 05 · ACTIVITY RATIO · 6h PRE-ANNOUNCEMENT</span>
+      </div>
+    </div>
+    <div class="explain-panel" id="explain-5">
+      <div class="explain-inner">
+        <h4>Are PM participants forward-looking?</h4>
+        <p>For each of the four scheduled macro releases, this panel measures the average absolute
+          PM signal change in the 6 hours <em>before</em> the announcement, divided by the average
+          change during all other hours. A ratio &gt; 1 means traders are systematically more
+          active before the release than at other times.</p>
+        <h4>How to read</h4>
+        <ul>
+          <li><strong>Activity ratio</strong> — large number means strong pre-event positioning.
+            Stars indicate statistical significance against the null of random activity (Welch t-test).</li>
+          <li><strong>Best asset</strong> — for each event, the asset whose post-announcement
+            return is most strongly predicted by the cumulative pre-announcement PM signal.
+            β is the OLS slope coefficient with HC3 standard errors.</li>
+        </ul>
+        <h4>How to use it</h4>
+        <p>This validates the premise that Polymarket genuinely anticipates news rather than just
+          reacting to it. High activity ratios for CPI and Employment confirm that pre-release PM
+          positioning is informative — useful as a signal in event-driven strategies. The most
+          robust predictive link is INF→Oil with p &lt; 0.001.</p>
+        <span class="explain-note">Sample sizes are small (9–13 events per type) due to the
+          13-month window and quarterly cadence of GDP. Treat the asset-level regressions as
+          directionally informative rather than as definitive evidence.</span>
+      </div>
+    </div>
+    <div class="events-grid" id="events-grid">
+      <div class="loading" style="grid-column: span 4;">LOADING…</div>
+    </div>
+
+    <div style="margin-top: 24px;">
+      <div style="font-size: 11px; letter-spacing: 0.15em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 10px;">
+        Full event-study regression results
+      </div>
+      <div class="ereg-wrap">
+        <table class="ereg-table" id="ereg-table">
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>PM Signal</th>
+              <th>Asset</th>
+              <th class="num">N</th>
+              <th class="num">β</th>
+              <th class="num">p (HC3)</th>
+            </tr>
+          </thead>
+          <tbody id="ereg-tbody">
+            <tr><td colspan="6" class="loading">LOADING…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- SECTION 6 — DLM                                                    -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">Full-sample <em>lag peaks</em></h2>
+      <div class="section-meta">
+        <button class="explain-toggle" data-target="explain-6">
+          <span>What is this?</span><span class="chev">▾</span>
+        </button>
+        <span class="section-num">§ 06 · DISTRIBUTED LAG MODEL · K=6</span>
+      </div>
+    </div>
+    <div class="explain-panel" id="explain-6">
+      <div class="explain-inner">
+        <h4>Information transmission speed across the full sample</h4>
+        <p>Unlike the shock-panel IRF (which conditions on shock hours), the DLM regresses
+          next-hour returns on PM signals at lags 1 to 6 simultaneously, on the entire 9,673-hour
+          sample. The peak lag identifies the horizon at which the PM signal carries the most
+          remaining predictive content for next-hour returns.</p>
+        <h4>How to read each row</h4>
+        <ul>
+          <li><strong>Peak h</strong> — horizon at which the PM signal has its strongest
+            significant β coefficient.</li>
+          <li><strong>Bar visualisation</strong> — taller bar at the peak lag, lower bars elsewhere.
+            Quick visual cue for absorption speed.</li>
+          <li><strong>β at peak</strong> — coefficient magnitude at the peak lag.</li>
+          <li><strong>p at peak</strong> — HAC-robust p-value at the peak lag.</li>
+        </ul>
+        <h4>How to use it</h4>
+        <p>Cross-validates the shock-panel IRF results on a different sample. When DLM and IRF
+          agree on a lag (e.g., FED→SPY at h=1–2), confidence is high. When they disagree, treat
+          the IRF as primary because it isolates information arrival hours.</p>
+        <span class="explain-note">Specification: <code>r(t+1) = α + φ·r(t) + γ'X(t)
+          + Σ β·PM(t-k) + ε</code> with k = 1…6. Newey-West HAC standard errors with 5 lags.
+          Missingness dummies excluded for interpretability.</span>
+      </div>
+    </div>
+    <div class="dlm-panel">
+      <ul class="dlm-list" id="dlm-list">
+        <li class="loading">LOADING…</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- SECTION 7 — OLS BASELINE                                          -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">Incremental <em>R²</em></h2>
+      <div class="section-meta">
+        <button class="explain-toggle" data-target="explain-7">
+          <span>What is this?</span><span class="chev">▾</span>
+        </button>
+        <span class="section-num">§ 07 · FULL-SAMPLE OLS · BASELINE vs AUGMENTED</span>
+      </div>
+    </div>
+    <div class="explain-panel" id="explain-7">
+      <div class="explain-inner">
+        <h4>Do PM signals add anything beyond standard financial controls?</h4>
+        <p>For each asset, two OLS specifications are estimated:</p>
+        <ul>
+          <li><strong>Baseline</strong>: regresses next-hour return on standard financial
+            controls (VIX, DXY, US2Y, US10Y), hour/day-of-week dummies, announcement dummies,
+            and own lagged return.</li>
+          <li><strong>Augmented</strong>: adds the four PM signals plus their missingness dummies.</li>
+        </ul>
+        <p>The incremental R² (<strong>ΔR²</strong>) measures how much extra explanatory power
+          the PM block contributes. The joint F-test asks whether the four PM coefficients are
+          collectively non-zero.</p>
+        <h4>How to interpret</h4>
+        <p>Small but consistently positive ΔR² across all assets confirms that PM signals carry
+          incremental information. The fact that the joint F-test is significant only for Oil
+          (p &lt; 0.05) confirms that <strong>the unconditional signal is weak</strong> — most
+          of the predictive content is concentrated in the rare shock hours analysed in §02–§04,
+          not in the average hour.</p>
+        <span class="explain-note">This is the empirical motivation for the entire shock-panel
+          framework: averaging across all 9,673 hours dilutes the genuine signal because most
+          hours contain no information arrival.</span>
+      </div>
+    </div>
+    <div class="ols-grid" id="ols-grid">
+      <div class="loading" style="grid-column: span 6;">LOADING…</div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  POLYMARKET <em>alpha terminal</em> · Updated daily via automated pipeline ·
+  Reads from <code style="color: var(--accent-2)">./results/</code>
+</footer>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal" id="modal">
+    <button class="modal-close" id="modal-close">×</button>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════
+// CONFIG — paths match the pipeline's RESULTS_DIR = "results/"
+// ════════════════════════════════════════════════════════════════════
+const RESULTS_DIR = 'results';
+const FILES = {
+  signals:    'current_signals.csv',
+  regression: 'results_regression.csv',
+  irf:        'results_irf.csv',
+  lgbm:       'results_lgbm.csv',
+  fimp:       'results_feature_importance.csv',
+  ols:        'results_ols_summary.csv',
+  dlm:        'results_dlm_peak_lags.csv',
+  backtest:   'results_backtest.csv',
+  eventAct:   'results_event_study_activity.csv',
+  eventReg:   'results_event_study_regression.csv',
+};
+
+const PM_LABELS = {
+  FED_DELTA:          'Fed Funds Rate',
+  GDP_DELTA:          'GDP Growth',
+  UNEMPLOYMENT_DELTA: 'Unemployment',
+  INF_MONTHLY_DELTA:  'Monthly Inflation',
+};
+const EVENT_LABELS = {
+  Ann_FOMC:       'FOMC Meeting',
+  Ann_CPI:        'CPI Release',
+  Ann_Employment: 'Employment Report',
+  Ann_GDP:        'GDP Release',
+};
+const PM_FEATURES    = ['pm_delta', 'pm_z', 'pm_vol'];
+const MACRO_FEATURES = ['DXY_chg_L1', 'US2Y_chg_L1'];
+
+// ════════════════════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════════════════════
+function cleanAsset(s) { return String(s || '').replace('_chg', ''); }
+
+function fmt(n, d = 3) {
+  if (n == null || n === '' || isNaN(n)) return '—';
+  const v = Number(n);
+  return (v >= 0 ? '+' : '') + v.toFixed(d);
+}
+function fmtPct(n, d = 2) {
+  if (n == null || isNaN(n)) return '—';
+  return (Number(n) * 100).toFixed(d) + '%';
+}
+function fmtDate(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+  } catch (e) { return String(iso); }
+}
+
+async function loadCSV(name) {
+  try {
+    const res = await fetch(`${RESULTS_DIR}/${name}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    return Papa.parse(text, { header: true, dynamicTyping: true, skipEmptyLines: true }).data;
+  } catch (e) {
+    console.warn(`Failed to load ${name}:`, e.message);
+    return null;
+  }
+}
+async function loadAll() {
+  const entries = await Promise.all(
+    Object.entries(FILES).map(async ([k, f]) => [k, await loadCSV(f)])
+  );
+  return Object.fromEntries(entries);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// EXPLAIN-TOGGLE & MODAL
+// ════════════════════════════════════════════════════════════════════
+document.addEventListener('click', (e) => {
+  // Explain toggles
+  const toggle = e.target.closest('.explain-toggle');
+  if (toggle) {
+    const id = toggle.dataset.target;
+    const panel = document.getElementById(id);
+    if (panel) {
+      panel.classList.toggle('open');
+      toggle.classList.toggle('open');
+    }
+    return;
+  }
+  // Modal close
+  if (e.target.id === 'modal-close' || e.target.id === 'modal-overlay') {
+    closeModal();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+});
+
+function openModal(html) {
+  document.getElementById('modal-content').innerHTML = html;
+  document.getElementById('modal-overlay').classList.add('active');
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('active');
+}
+
+// ════════════════════════════════════════════════════════════════════
+// RENDER · LIVE SIGNALS
+// ════════════════════════════════════════════════════════════════════
+function renderSignals(signals) {
+  const strip = document.getElementById('signals-strip');
+  if (!signals || signals.length === 0) {
+    strip.innerHTML = '<div class="loading">NO DATA</div>';
+    return;
+  }
+  const last = signals[0]?.timestamp;
+  if (last) document.getElementById('last-update').textContent = fmtDate(last);
+
+  strip.innerHTML = signals.map(row => {
+    const isShock   = row.is_shock === 1 || row.is_shock === '1';
+    const isMissing = row.is_missing === 1 || row.is_missing === '1';
+    const cls = isMissing ? 'missing' : (isShock ? 'shock' : '');
+    const status  = isMissing ? 'ILLIQUID' : (isShock ? '⚡ SHOCK' : 'CALM');
+    const statCls = isMissing ? 'missing' : (isShock ? 'shock' : 'calm');
+    const z = Number(row.z_score || 0);
+
+    return `
+      <div class="signal-card ${cls}" data-signal="${row.signal}">
+        <div class="signal-status ${statCls}">${status}</div>
+        <div class="signal-name">${PM_LABELS[row.signal] || row.signal}</div>
+        <div class="signal-value">${fmt(z, 2)}<span class="signal-unit">σ</span></div>
+        <div class="signal-meta">
+          <span>Δ ${fmt(row.delta, 4)}</span>
+          <span>thr ${fmt(row.threshold, 4)}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Click handlers
+  strip.querySelectorAll('.signal-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const sig = card.dataset.signal;
+      const row = signals.find(r => r.signal === sig);
+      if (row) showSignalModal(row);
+    });
+  });
+
+  // Trade panel
+  const shock = signals.find(r => (r.is_shock === 1 || r.is_shock === '1') && !(r.is_missing === 1));
+  if (shock) renderTradePanel(shock);
+}
+
+function showSignalModal(row) {
+  const isShock   = row.is_shock === 1 || row.is_shock === '1';
+  const isMissing = row.is_missing === 1 || row.is_missing === '1';
+  const z = Number(row.z_score || 0);
+  const explanation = isMissing
+    ? `The ${PM_LABELS[row.signal]} contract has no recent trading activity, so the
+       z-score is unreliable. The pipeline NaN-masks this signal until liquidity returns.`
+    : isShock
+    ? `Information arrival in progress. The signal has moved <strong>${fmt(z, 2)}σ</strong>
+       relative to its 20-hour rolling distribution, crossing the ±2σ shock threshold.
+       Check the live execution panel above for actionable trades.`
+    : `The signal is in a calm state — the recent move is within the normal range of its
+       20-hour rolling distribution. No trading action recommended at this time.`;
+
+  openModal(`
+    <div class="modal-title">${PM_LABELS[row.signal]}</div>
+    <div class="modal-subtitle">${row.signal} · Updated ${fmtDate(row.timestamp)}</div>
+    <div class="modal-grid">
+      <div class="modal-stat">
+        <div class="label">Z-Score</div>
+        <div class="value" style="color:${isShock ? 'var(--accent)' : 'var(--text)'}">
+          ${fmt(z, 2)}σ
+        </div>
+      </div>
+      <div class="modal-stat">
+        <div class="label">Raw Δ</div>
+        <div class="value">${fmt(row.delta, 5)}</div>
+      </div>
+      <div class="modal-stat">
+        <div class="label">Rolling μ (20h)</div>
+        <div class="value">${fmt(row.roll_mu, 5)}</div>
+      </div>
+      <div class="modal-stat">
+        <div class="label">Rolling σ (20h)</div>
+        <div class="value">${fmt(row.roll_sig, 5)}</div>
+      </div>
+      <div class="modal-stat">
+        <div class="label">Threshold</div>
+        <div class="value">${fmt(row.threshold, 5)}</div>
+      </div>
+      <div class="modal-stat">
+        <div class="label">Status</div>
+        <div class="value" style="color:${isShock ? 'var(--accent)' : isMissing ? 'var(--red)' : 'var(--text)'}">
+          ${isMissing ? 'ILLIQUID' : isShock ? 'SHOCK' : 'CALM'}
+        </div>
+      </div>
+    </div>
+    <div class="modal-body"><p>${explanation}</p></div>
+  `);
+}
+
+function renderTradePanel(shock) {
+  const panel = document.getElementById('trade-panel');
+  const grid  = document.getElementById('trade-grid');
+  const narr  = document.getElementById('trade-narrative');
+  panel.classList.add('active');
+
+  const sigName = PM_LABELS[shock.signal] || shock.signal;
+  const dir = Number(shock.delta) > 0 ? 'upward' : 'downward';
+
+  narr.innerHTML = `A <strong style="color:var(--accent)">${sigName}</strong> shock is in
+    progress. The signal has moved <strong style="color:var(--accent)">${dir}</strong> by
+    <strong>${fmt(Number(shock.z_score), 2)}σ</strong> relative to its 20-hour rolling
+    distribution. The IRF identifies the following asset–horizon pairs as historically
+    significant for this signal:`;
+
+  const irf = (window.__IRF || []).filter(r => r.pm_signal === shock.signal);
+  if (irf.length === 0) {
+    grid.innerHTML = `<div class="trade-stat">
+      <span class="label">No historical significance</span>
+      <span class="value">—</span>
+      <span class="sub">This signal has no IRF-significant asset pair in the current sample.</span>
+    </div>`;
+    return;
+  }
+  grid.innerHTML = irf.map(r => {
+    const sign = Number(r.beta_optimal) * Math.sign(Number(shock.delta));
+    const dirAct = sign > 0 ? 'LONG' : 'SHORT';
+    const dirCol = sign > 0 ? 'var(--green)' : 'var(--red)';
+    return `
+      <div class="trade-stat">
+        <span class="label">${cleanAsset(r.asset)} · h = ${r.optimal_h}</span>
+        <span class="value" style="color:${dirCol}">${dirAct}</span>
+        <span class="sub">β = ${fmt(r.beta_optimal, 5)} · p = ${fmt(r.p_optimal, 3)}</span>
+      </div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════════════════
+// RENDER · ALPHA TABLE (BACKTEST)
+// ════════════════════════════════════════════════════════════════════
+function renderAlpha(backtest) {
+  const tbody = document.getElementById('alpha-tbody');
+  if (!backtest || backtest.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7">NO DATA</td></tr>';
+    return;
+  }
+  const sorted = [...backtest].sort((a, b) => Number(b.net_sharpe) - Number(a.net_sharpe));
+  const rowKey = r => `${r.pm}|${r.asset}`;
+
+  tbody.innerHTML = sorted.map(r => {
+    const gross = Number(r.gross_sharpe), net = Number(r.net_sharpe);
+    const ddPct = fmtPct(Math.abs(Number(r.max_drawdown)), 1);
+    const grossCls = gross > 1.0 ? 'sharpe-pos' : gross > -0.5 ? 'sharpe-mid' : 'sharpe-neg';
+    const netCls   = net   > 0.3 ? 'sharpe-pos' : net   > -0.5 ? 'sharpe-mid' : 'sharpe-neg';
+    let tier = 'tier-avoid', tierLabel = 'AVOID';
+    if (net >  0.5) { tier = 'tier-prime'; tierLabel = 'PRIME'; }
+    else if (gross > 1.0 && net >= -1.0) { tier = 'tier-watch'; tierLabel = 'WATCH'; }
+    return `
+      <tr data-key="${rowKey(r)}">
+        <td>
+          <span class="pm-name">${PM_LABELS[r.pm] || r.pm} →</span>
+          <span class="asset-name">${cleanAsset(r.asset)}</span>
+        </td>
+        <td class="num">${r.h}</td>
+        <td class="num">${r.n_trades}</td>
+        <td class="num sharpe-cell ${grossCls}">${fmt(gross, 2)}</td>
+        <td class="num sharpe-cell ${netCls}">${fmt(net, 2)}</td>
+        <td class="num" style="color:var(--red)">${ddPct}</td>
+        <td><span class="tier-badge ${tier}">${tierLabel}</span></td>
+      </tr>`;
+  }).join('');
+
+  // Click handlers
+  tbody.querySelectorAll('tr').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const r = sorted.find(x => rowKey(x) === tr.dataset.key);
+      if (r) showBacktestModal(r);
+    });
+  });
+
+  // Insight panel
+  const primeCount = sorted.filter(r => Number(r.net_sharpe) > 0.5).length;
+  const watchCount = sorted.filter(r => Number(r.gross_sharpe) > 1.0 && Number(r.net_sharpe) <= 0.5).length;
+  const bestGross = sorted.reduce((a, b) => Number(a.gross_sharpe) > Number(b.gross_sharpe) ? a : b);
+  const bestNet   = sorted.reduce((a, b) => Number(a.net_sharpe)   > Number(b.net_sharpe)   ? a : b);
+  const worstNet  = sorted.reduce((a, b) => Number(a.net_sharpe)   < Number(b.net_sharpe)   ? a : b);
+
+  document.getElementById('alpha-insight').innerHTML = `
+    Of ${sorted.length} backtested pairs, <strong>${primeCount}</strong> deliver positive
+    Net Sharpe (PRIME) and <strong>${watchCount}</strong> show positive Gross but marginal Net
+    (WATCH). The remaining pairs do not meet the alpha threshold.
+    <div class="insight-divider"></div>
+    <strong>Best Gross alpha</strong>: ${PM_LABELS[bestGross.pm]} → ${cleanAsset(bestGross.asset)}
+    at SR ${fmt(Number(bestGross.gross_sharpe), 2)}.
+    <br><strong>Best Net alpha</strong>: ${PM_LABELS[bestNet.pm]} → ${cleanAsset(bestNet.asset)}
+    at SR ${fmt(Number(bestNet.net_sharpe), 2)}.
+    <br><strong>Worst Net</strong>: ${PM_LABELS[worstNet.pm]} → ${cleanAsset(worstNet.asset)}
+    at SR ${fmt(Number(worstNet.net_sharpe), 2)}.
+    <div class="insight-divider"></div>
+    The pattern of positive Gross / negative Net for most pairs is consistent with a
+    Grossman–Stiglitz equilibrium: the signal contains real information, but trading
+    frictions consume the edge.
+  `;
+}
+
+function showBacktestModal(r) {
+  openModal(`
+    <div class="modal-title">${PM_LABELS[r.pm]} → ${cleanAsset(r.asset)}</div>
+    <div class="modal-subtitle">Backtest · h = ${r.h} · ${r.n_trades} trades</div>
+    <div class="modal-grid">
+      <div class="modal-stat"><div class="label">Gross Sharpe</div>
+        <div class="value">${fmt(Number(r.gross_sharpe), 3)}</div></div>
+      <div class="modal-stat"><div class="label">Net Sharpe</div>
+        <div class="value">${fmt(Number(r.net_sharpe), 3)}</div></div>
+      <div class="modal-stat"><div class="label">Mean Return</div>
+        <div class="value">${fmt(Number(r.mean_ret) * 10000, 2)} bp</div></div>
+      <div class="modal-stat"><div class="label">Cumulative Return</div>
+        <div class="value">${fmtPct(Number(r.cumulative_ret), 2)}</div></div>
+      <div class="modal-stat"><div class="label">Max Drawdown</div>
+        <div class="value" style="color:var(--red)">${fmtPct(Number(r.max_drawdown), 2)}</div></div>
+      <div class="modal-stat"><div class="label">Directional Acc</div>
+        <div class="value">${fmtPct(Number(r.dir_accuracy), 1)}</div></div>
+    </div>
+    <div class="modal-body">
+      <p><strong>Strategy</strong>: open a position whenever <code>${r.pm}</code> enters a
+      shock state, take direction = sign of the PM signal, hold for ${r.h} hour${r.h>1?'s':''},
+      no overlapping trades.</p>
+      <p><strong>Sample</strong>: ${r.n_trades} independent trades over the backtest window.
+      The binomial test against 50% random direction yields p = ${fmt(Number(r.binom_p), 3)},
+      indicating the directional edge is ${Number(r.binom_p) < 0.10 ? 'statistically meaningful' : 'not statistically distinguishable from random'}.</p>
+    </div>
+  `);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// RENDER · LAG GRID
+// ════════════════════════════════════════════════════════════════════
+function renderLagGrid(regression, irf) {
+  const grid = document.getElementById('lag-grid');
+  if (!regression) { grid.innerHTML = '<div class="loading">NO DATA</div>'; return; }
+
+  const pms      = ['FED_DELTA', 'GDP_DELTA', 'UNEMPLOYMENT_DELTA', 'INF_MONTHLY_DELTA'];
+  const assets   = ['Gold_chg', 'BTC_chg', 'SPY_chg', 'Oil_chg'];
+  const horizons = [1, 2, 3, 4, 5, 6];
+
+  // Build lookup
+  const lookup = {};
+  regression.forEach(r => {
+    const k = `${r.pm_signal}|${r.asset}`;
+    if (!lookup[k]) lookup[k] = {};
+    lookup[k][Number(r.h)] = { beta: Number(r.beta_pm), p: Number(r.p_hc3), n: r.n, r: r.r };
+  });
+  const irfMap = {};
+  (irf || []).forEach(r => { irfMap[`${r.pm_signal}|${r.asset}`] = Number(r.optimal_h); });
+
+  let html = '<div class="lag-grid-cell lag-grid-header">PAIR</div>';
+  horizons.forEach(h => { html += `<div class="lag-grid-cell lag-grid-header">h = ${h}</div>`; });
+
+  pms.forEach(pm => {
+    assets.forEach(asset => {
+      html += `<div class="lag-grid-cell lag-grid-pair">
+                 <strong>${PM_LABELS[pm]}</strong><br>
+                 <span style="color:var(--text-low)">${cleanAsset(asset)}</span>
+               </div>`;
+      const k = `${pm}|${asset}`;
+      const optH = irfMap[k];
+      horizons.forEach(h => {
+        const cell = lookup[k]?.[h];
+        if (!cell) {
+          html += '<div class="lag-grid-cell" style="color:var(--text-low)">—</div>';
+        } else {
+          let cls = '';
+          if (h === optH)         cls = 'lag-active';
+          else if (cell.p < 0.05) cls = 'lag-active-strong';
+          else if (cell.p < 0.10) cls = 'lag-active-weak';
+          const clickable = cls ? `data-cell="${pm}|${asset}|${h}"` : '';
+          html += `<div class="lag-grid-cell ${cls}" ${clickable}>
+                     ${fmt(cell.beta, 4)}
+                     <div class="p-val">p ${fmt(cell.p, 3)}</div>
+                   </div>`;
+        }
+      });
+    });
+  });
+
+  grid.innerHTML = html;
+
+  // Click handlers on highlighted cells
+  grid.querySelectorAll('[data-cell]').forEach(cell => {
+    cell.addEventListener('click', () => {
+      const [pm, asset, h] = cell.dataset.cell.split('|');
+      const data = lookup[`${pm}|${asset}`][Number(h)];
+      const isOpt = irfMap[`${pm}|${asset}`] === Number(h);
+      openModal(`
+        <div class="modal-title">${PM_LABELS[pm]} → ${cleanAsset(asset)}</div>
+        <div class="modal-subtitle">Shock-panel OLS · h = ${h} ${isOpt ? '· OPTIMAL LAG' : ''}</div>
+        <div class="modal-grid">
+          <div class="modal-stat"><div class="label">β coefficient</div>
+            <div class="value">${fmt(data.beta, 6)}</div></div>
+          <div class="modal-stat"><div class="label">HC3 p-value</div>
+            <div class="value" style="color:${data.p<0.05?'var(--green)':data.p<0.10?'var(--yellow)':'var(--text)'}">${fmt(data.p, 4)}</div></div>
+          <div class="modal-stat"><div class="label">Sample size</div>
+            <div class="value">${data.n}</div></div>
+          <div class="modal-stat"><div class="label">Pearson r</div>
+            <div class="value">${fmt(data.r, 4)}</div></div>
+        </div>
+        <div class="modal-body">
+          <p>Bivariate OLS regression <code>r(t+${h}) = α + β · ΔPM(t) + ε</code> estimated
+          on the shock panel only, with HC3 heteroskedasticity-robust standard errors.</p>
+          <p>${isOpt ? `<strong>This is the optimal transmission lag</strong> for this pair —
+            the backtest in §02 uses h=${h} as the holding period for ${PM_LABELS[pm]} → ${cleanAsset(asset)} trades.`
+            : `Significant transmission detected at h=${h}, but the optimal lag for this pair is
+            h=${irfMap[`${pm}|${asset}`] || 'none'}.`}</p>
+        </div>
+      `);
+    });
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// RENDER · LIGHTGBM
+// ════════════════════════════════════════════════════════════════════
+function renderLGBM(lgbm, fimp) {
+  const tbody = document.getElementById('lgbm-tbody');
+  if (!lgbm || lgbm.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8">NO DATA</td></tr>';
+    return;
+  }
+  const sorted = [...lgbm].sort((a, b) => Number(b.DA_OOS_LGBM) - Number(a.DA_OOS_LGBM));
+
+  tbody.innerHTML = sorted.map(r => {
+    const da    = Number(r.DA_OOS_LGBM);
+    const daOLS = Number(r.DA_OOS_OLS);
+    const pBin  = Number(r.p_binom_vs_random);
+    const pMcN  = Number(r.p_mcnemar_vs_ols);
+    const daCls    = da > 0.50 ? 'da-pos' : 'da-neg';
+    const daOLSCls = daOLS > 0.50 ? 'da-pos' : 'da-neg';
+
+    let verdict = 'verdict-flat', verdictLbl = 'FLAT';
+    if (da > 0.55 && pBin < 0.10) { verdict = 'verdict-strong'; verdictLbl = 'STRONG'; }
+    else if (da > 0.52 && (pBin < 0.20 || pMcN < 0.10)) { verdict = 'verdict-weak'; verdictLbl = 'EDGE'; }
+    else if (da < 0.48) { verdict = 'verdict-bad'; verdictLbl = 'BAD'; }
+
+    return `
+      <tr>
+        <td>
+          <span class="pm-name">${PM_LABELS[r.pm_signal] || r.pm_signal} →</span>
+          <span class="asset-name">${cleanAsset(r.asset)}</span>
+        </td>
+        <td class="num">${r.h}</td>
+        <td class="num">${r.n_oos}</td>
+        <td class="num"><span class="da-num ${daCls}">${fmtPct(da, 2)}</span></td>
+        <td class="num"><span class="da-num ${daOLSCls}">${fmtPct(daOLS, 2)}</span></td>
+        <td class="num">${fmt(pBin, 3)}</td>
+        <td class="num">${pMcN >= 0 ? fmt(pMcN, 3) : '—'}</td>
+        <td><span class="verdict ${verdict}">${verdictLbl}</span></td>
+      </tr>`;
+  }).join('');
+
+  // Feature importance selector + bars
+  if (!fimp || fimp.length === 0) {
+    document.getElementById('fimp-bars').innerHTML = '<div class="loading">NO FEATURE DATA</div>';
+    return;
+  }
+  const pairs = [...new Set(fimp.map(r => `${r.pm_signal}|${r.asset}`))];
+  const selector = document.getElementById('fimp-selector');
+  selector.innerHTML = pairs.map((p, i) => {
+    const [pm, asset] = p.split('|');
+    return `<button class="fimp-btn ${i===0?'active':''}" data-pair="${p}">${PM_LABELS[pm]||pm}→${cleanAsset(asset)}</button>`;
+  }).join('');
+
+  function showFimp(pairKey) {
+    const [pm, asset] = pairKey.split('|');
+    const rows = fimp.filter(r => r.pm_signal === pm && r.asset === asset)
+                     .sort((a, b) => Number(a.rank) - Number(b.rank));
+    if (rows.length === 0) {
+      document.getElementById('fimp-bars').innerHTML = '<div class="loading">NO DATA</div>';
+      return;
+    }
+    const maxImp = Math.max(...rows.map(r => Number(r.importance)));
+    document.getElementById('fimp-bars').innerHTML = rows.map(r => {
+      const f = r.feature;
+      let cls = '';
+      if (PM_FEATURES.includes(f))         cls = 'pm';
+      else if (MACRO_FEATURES.includes(f)) cls = 'macro';
+      const w = (Number(r.importance) / maxImp) * 100;
+      return `
+        <div class="fimp-row">
+          <span class="fimp-label ${cls}">${f}</span>
+          <div class="fimp-bar-track"><div class="fimp-bar-fill ${cls}" style="width:${w}%"></div></div>
+          <span class="fimp-value">${Number(r.importance).toFixed(0)}</span>
+        </div>`;
+    }).join('');
+  }
+  showFimp(pairs[0]);
+  selector.querySelectorAll('.fimp-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selector.querySelectorAll('.fimp-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      showFimp(btn.dataset.pair);
+    });
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// RENDER · EVENT STUDY
+// ════════════════════════════════════════════════════════════════════
+function renderEvents(activity, regression) {
+  const grid = document.getElementById('events-grid');
+  if (!activity) { grid.innerHTML = '<div class="loading">NO DATA</div>'; return; }
+
+  const bestByPM = {};
+  (regression || []).forEach(r => {
+    const pm = r.pm;
+    if (!bestByPM[pm] || Number(r.pval_hc3) < Number(bestByPM[pm].pval_hc3)) bestByPM[pm] = r;
+  });
+
+  grid.innerHTML = activity.map(r => {
+    const ratio = Number(r.activity_ratio);
+    const pct   = Math.min(100, (ratio / 4) * 100);
+    const p     = Number(r.pval_activity);
+    const sig   = p < 0.001 ? '***' : p < 0.01 ? '**' : p < 0.05 ? '*' : p < 0.10 ? '~' : '';
+    const best  = bestByPM[r.pm];
+    return `
+      <div class="event-card" data-pm="${r.pm}" data-event="${r.event}">
+        <div class="event-name">${EVENT_LABELS[r.event] || r.event}</div>
+        <div class="event-pm">${PM_LABELS[r.pm] || r.pm}</div>
+        <div class="event-ratio-label">PRE-EVENT ACTIVITY</div>
+        <div class="event-ratio">${ratio.toFixed(2)}×${sig ? ' <span style="font-size:14px;color:var(--accent)">'+sig+'</span>' : ''}</div>
+        <div class="ratio-bar-wrap">
+          <div class="ratio-bar"><div class="ratio-fill" style="width:${pct}%"></div></div>
+          <div class="ratio-bar-labels"><span>1×</span><span>2×</span><span>3×</span><span>4×+</span></div>
+        </div>
+        <div class="event-details"><span>Events</span><span>${r.n_events}</span></div>
+        <div class="event-details"><span>p-value</span><span>${fmt(p, 4)}</span></div>
+        ${best ? `
+        <div class="event-details" style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px">
+          <span>Best asset</span>
+          <span>${cleanAsset(best.asset)} · β=${fmt(Number(best.beta), 3)}</span>
+        </div>` : ''}
+      </div>`;
+  }).join('');
+
+  // Full event regression table
+  const tbody = document.getElementById('ereg-tbody');
+  if (regression && regression.length > 0) {
+    tbody.innerHTML = regression.map(r => {
+      const p = Number(r.pval_hc3);
+      const cls = p < 0.05 ? 'sig' : p < 0.15 ? 'weak' : '';
+      return `
+        <tr class="${cls}">
+          <td>${EVENT_LABELS[r.event] || r.event}</td>
+          <td><span class="pm-name">${PM_LABELS[r.pm] || r.pm}</span></td>
+          <td><span class="asset-name" style="margin-left:0">${cleanAsset(r.asset)}</span></td>
+          <td class="num">${r.n_events}</td>
+          <td class="num">${fmt(Number(r.beta), 4)}</td>
+          <td class="num" style="color:${p<0.05?'var(--green)':p<0.10?'var(--yellow)':'var(--text-dim)'}">${fmt(p, 4)}</td>
+        </tr>`;
+    }).join('');
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// RENDER · DLM
+// ════════════════════════════════════════════════════════════════════
+function renderDLM(dlm) {
+  const list = document.getElementById('dlm-list');
+  if (!dlm || dlm.length === 0) { list.innerHTML = '<li class="loading">NO DATA</li>'; return; }
+  const sorted = [...dlm].sort((a, b) => Number(a.p_at_peak) - Number(b.p_at_peak));
+
+  list.innerHTML = sorted.map(r => {
+    const peak = Number(r.peak_lag_dlm);
+    let viz = '';
+    for (let i = 1; i <= 6; i++) {
+      const h = i === peak ? 1.0 : 0.25 + (i % 3) * 0.1;
+      viz += `<div class="dlm-viz-bar ${i === peak ? 'active' : ''}" style="height:${h * 100}%"></div>`;
+    }
+    return `
+      <li class="dlm-item">
+        <div class="dlm-pair">${PM_LABELS[r.pm_signal]} <small>→ ${r.asset}</small></div>
+        <div class="dlm-lag">h=${peak}</div>
+        <div class="dlm-viz">${viz}</div>
+        <div class="dlm-beta">β ${fmt(Number(r.beta_at_peak), 5)}</div>
+        <div class="dlm-p">p ${fmt(Number(r.p_at_peak), 3)}</div>
+      </li>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════════════════
+// RENDER · OLS BASELINE
+// ════════════════════════════════════════════════════════════════════
+function renderOLS(ols) {
+  const grid = document.getElementById('ols-grid');
+  if (!ols || ols.length === 0) { grid.innerHTML = '<div class="loading">NO DATA</div>'; return; }
+  const maxAug = Math.max(...ols.map(r => Number(r.r2_aug)));
+
+  grid.innerHTML = ols.map(r => {
+    const aug = Number(r.r2_aug), base = Number(r.r2_base);
+    const delta = Number(r.delta_r2), fp = Number(r.f_pvalue);
+    const pctAug  = (aug / maxAug) * 100;
+    const pctBase = (base / maxAug) * 100;
+    const sigClass = fp < 0.05 ? 'sig' : '';
+    const tag = (r.is_core === true || r.is_core === 'True') ? 'CORE' : 'EXTENDED';
+    return `
+      <div class="ols-asset">
+        <div class="ols-asset-name">${r.asset}</div>
+        <div class="ols-asset-type">${tag}</div>
+        <div class="ols-r2-container">
+          <div class="ols-r2-label"><span>BASELINE</span><span>${fmt(base, 4)}</span></div>
+          <div class="ols-r2-bar"><div class="ols-r2-fill" style="width:${pctBase}%;background:var(--text-low)"></div></div>
+          <div class="ols-r2-label" style="margin-top:4px"><span>AUGMENTED</span><span>${fmt(aug, 4)}</span></div>
+          <div class="ols-r2-bar"><div class="ols-r2-fill" style="width:${pctAug}%"></div></div>
+        </div>
+        <div class="ols-delta-label">INCREMENTAL R²</div>
+        <div class="ols-delta">+${(delta * 100).toFixed(3)}%</div>
+        <div class="ols-fp ${sigClass}">Joint F-test: p = <strong>${fmt(fp, 3)}</strong></div>
+      </div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════════
+(async () => {
+  const data = await loadAll();
+  window.__IRF = data.irf || [];
+
+  // Banner if any critical file failed to load
+  const missing = Object.entries(data).filter(([k, v]) => v === null).map(([k]) => FILES[k]);
+  if (missing.length > 0) {
+    document.getElementById('error-area').innerHTML = `
+      <div class="error-banner">
+        <strong>WARNING</strong>: Could not load ${missing.length} file${missing.length>1?'s':''}
+        from <code>./${RESULTS_DIR}/</code>: ${missing.join(', ')}.
+        Run the pipeline (<code>python MLanalysis_final.py</code>) and ensure the
+        <code>${RESULTS_DIR}/</code> folder is alongside this HTML file.
+        Open via local server: <code>python3 -m http.server 8000</code>.
+      </div>`;
+  }
+
+  // Header counters
+  if (data.regression) document.getElementById('sig-count').textContent = data.regression.length;
+  if (data.backtest) {
+    const totalTrades = data.backtest.reduce((s, r) => s + Number(r.n_trades || 0), 0);
+    document.getElementById('trade-count').textContent = totalTrades.toLocaleString();
+  }
+
+  // Render all sections
+  renderSignals(data.signals);
+  renderAlpha(data.backtest);
+  renderLagGrid(data.regression, data.irf);
+  renderLGBM(data.lgbm, data.fimp);
+  renderEvents(data.eventAct, data.eventReg);
+  renderDLM(data.dlm);
+  renderOLS(data.ols);
+})();
+</script>
+</body>
+</html>
