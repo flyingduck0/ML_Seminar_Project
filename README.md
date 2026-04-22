@@ -1,5 +1,3 @@
-# Description
-
 # Project 6: Prediction Markets 
 **Seminar Financial Machine Learning (FEM11215) — Erasmus School of Economics**
 
@@ -14,6 +12,15 @@
 This repository houses a fully automated, cloud-based data pipeline and frontend dashboard. The system is designed to continuously ingest live prediction market data from Polymarket, align it with traditional financial asset prices, run a suite of statistical and machine learning models, and display the results on a live web interface. 
 
 The entire process operates automatically on a daily schedule without the need for manual execution or a dedicated backend web server.
+
+---
+
+## Deployment & Access 
+To ensure transparency, reproducibility the entire project is deployed natively within GitHub's ecosystem. 
+
+* **Live Dashboard (GitHub Pages):** The frontend graphical interface is hosted publicly via GitHub Pages. Because it utilizes client-side data fetching, it requires no local Python installation or server to run. 
+  * **How to view:** Navigate to the main `Code` tab of this repository. In the right-hand sidebar, locate the **Deployments** section and click the active **github-pages** environment link (or the green checkmark) to open the live dashboard.
+* **Automated Daily Pipeline (GitHub Actions):** The data extraction and machine learning models are executed via a continuous integration pipeline (`daily_update.yml`). Execution logs can be viewed in the **Actions** tab of this repository. The pipeline runs automatically every day at 00:00 UTC, demonstrating the live, ongoing nature of this prediction market analysis.
 
 ---
 
@@ -37,7 +44,7 @@ Below is a breakdown of every major file in this repository and the specific fun
 
 ### `Pipeline_finished_not_cleanedup.py`
 * **Function:** The Data Engineer.
-* **Description:** Handles all API connections and data wrangling. It uses a custom retry-adapter to bypass rate limits when pulling data from Polymarket. It filters out irrelevant markets, handles timezone conversions, fetches traditional asset prices via `yfinance`, and merges everything into a clean, hourly timeline called `Final_Pipeline_Data.csv`.
+* **Description:** Handles all API connections and data wrangling. It uses a custom retry-adapter to bypass rate limits when pulling data from Polymarket. It filters out irrelevant markets, handles timezone conversions, fetches traditional asset prices via `yfinance`, and merges everything into a clean, hourly timeline called `Final_Pipeline_Data.csv` with the addition of announcement static data up until end of 2026.
 
 ### `MLanalysis_final.py`
 * **Function:** The Analytics Engine.
