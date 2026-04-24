@@ -75,4 +75,5 @@ Below is a breakdown of every major file and directory in this repository and th
 
 ## References
 
-Koves, A., Pandhey, A., Özcan, K. B., Trapani, L. L., & de Rooy, S. (2026). *Project 6: Prediction markets* [Unpublished manuscript]. Erasmus School of Economics.
+Koves, A., Pandhey, A., Özcan, K. B., Trapani, L. L., & de Rooy, S. (2026). *Prediction Markets and Asset Returns: The Predictive
+Effects of Polymarket Macroeconomic Signals* [Unpublished manuscript]. Erasmus School of Economics.
