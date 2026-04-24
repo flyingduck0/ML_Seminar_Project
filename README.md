@@ -19,7 +19,7 @@ The entire process operates automatically on a daily schedule without the need f
 To ensure transparency and reproducibility, the entire project is deployed natively within GitHub's ecosystem. 
 
 * **Live Dashboard (GitHub Pages):** The frontend graphical interface is hosted publicly via GitHub Pages. Because it utilizes client-side data fetching, it requires no local Python installation or server to run. 
-  * **Link:** [Insert your actual GitHub Pages URL here, e.g., https://flyingduck0.github.io/ML_Seminar_Project/]
+  * **Link:** https://flyingduck0.github.io/ML_Seminar_Project/]
   * **Alternative Access:** Navigate to the main `Code` tab of this repository. In the right-hand sidebar, locate the **Deployments** section and click the active **github-pages** environment link (or the green checkmark) to open the live dashboard.
 * **Automated Daily Pipeline (GitHub Actions):** The data extraction and machine learning models are executed via a continuous integration pipeline (`.github/workflows/daily_update.yml`). Execution logs can be viewed in the **Actions** tab of this repository.
 
